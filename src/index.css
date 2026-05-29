@@ -1,0 +1,241 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* AquaLux Carwash — sleek dark navy + electric blue */
+    --background: 222 47% 7%;
+    --foreground: 210 40% 98%;
+
+    --card: 222 40% 11%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 47% 9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 200 98% 55%;
+    --primary-foreground: 222 47% 8%;
+    --primary-glow: 195 100% 65%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 33% 14%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 195 100% 50%;
+    --accent-foreground: 222 47% 8%;
+
+    --success: 142 71% 45%;
+    --warning: 38 92% 55%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217 33% 18%;
+    --input: 217 33% 16%;
+    --ring: 200 98% 55%;
+
+    --radius: 0.875rem;
+
+    --gradient-primary: linear-gradient(135deg, hsl(200 98% 55%), hsl(195 100% 65%));
+    --gradient-hero: linear-gradient(135deg, hsl(222 47% 7%) 0%, hsl(217 60% 15%) 50%, hsl(200 80% 20%) 100%);
+    --gradient-card: linear-gradient(145deg, hsl(222 40% 13% / 0.8), hsl(217 33% 10% / 0.6));
+    --shadow-glow: 0 10px 40px -10px hsl(200 98% 55% / 0.4);
+    --shadow-card: 0 8px 32px -8px hsl(222 47% 4% / 0.6);
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+    --sidebar-background: 222.2 84% 4.9%;
+
+    --sidebar-foreground: 210 40% 98%;
+
+    --sidebar-primary: 224.3 76.3% 48%;
+
+    --sidebar-primary-foreground: 0 0% 100%;
+
+    --sidebar-accent: 240 3.7% 15.9%;
+
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+
+    --sidebar-border: 240 3.7% 15.9%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+  }
+}
+
+/* Force top-level backgrounds and text color to the app theme to avoid white flashes
+   Applies to html/body/root and common form elements so content is always readable.
+*/
+html,
+body,
+#root {
+  background-color: hsl(var(--background)) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+#root > * {
+  background-color: inherit !important;
+  color: inherit !important;
+}
+
+input,
+textarea,
+select,
+button {
+  color: inherit;
+}
+
+/* Force all white utilities to use dark navy background and theme text
+   Catches any legacy or dynamically-generated white classes so the
+   navbar-style dark theme applies consistently across the app.
+*/
+@layer utilities {
+  /* Override all white and very light background classes */
+  [class*="bg-white"],
+  .bg-white,
+  .dark .bg-white,
+  [class*="bg-slate-50"],
+  [class*="bg-slate-100"],
+  [class*="bg-slate-200"],
+  [class*="bg-slate-300"],
+  [class*="bg-gray-50"],
+  [class*="bg-gray-100"],
+  [class*="bg-gray-200"],
+  [class*="bg-gray-300"],
+  [class*="bg-zinc-50"],
+  [class*="bg-zinc-100"],
+  [class*="bg-zinc-200"],
+  [class*="bg-zinc-300"],
+  [class*="bg-stone-50"],
+  [class*="bg-stone-100"],
+  [class*="bg-stone-200"],
+  [class*="bg-stone-300"],
+  [class*="bg-neutral-50"],
+  [class*="bg-neutral-100"],
+  [class*="bg-neutral-200"],
+  [class*="bg-neutral-300"],
+  .bg-slate-50,
+  .bg-slate-100,
+  .bg-slate-200,
+  .bg-slate-300,
+  .bg-gray-50,
+  .bg-gray-100,
+  .bg-gray-200,
+  .bg-gray-300,
+  .bg-zinc-50,
+  .bg-zinc-100,
+  .bg-zinc-200,
+  .bg-zinc-300,
+  .bg-stone-50,
+  .bg-stone-100,
+  .bg-stone-200,
+  .bg-stone-300,
+  .bg-neutral-50,
+  .bg-neutral-100,
+  .bg-neutral-200,
+  .bg-neutral-300 {
+    background-color: hsl(var(--background)) !important;
+    color: hsl(var(--foreground)) !important;
+  }
+
+  /* Override all border-white and light border variants */
+  [class*="border-white"],
+  .border-white,
+  .dark .border-white,
+  [class*="border-gray-100"],
+  [class*="border-slate-100"],
+  [class*="border-zinc-100"],
+  .border-gray-100,
+  .border-slate-100,
+  .border-zinc-100 {
+    border-color: hsl(var(--border)) !important;
+  }
+
+  /* Override text-white and light text colors */
+  [class*="text-white"],
+  .text-white,
+  .dark .text-white,
+  [class*="text-gray-100"],
+  [class*="text-slate-100"],
+  .text-gray-100,
+  .text-slate-100 {
+    color: hsl(var(--foreground)) !important;
+  }
+
+  /* Override common escaped Tailwind white classes */
+  .bg-white\/5,
+  .bg-white\/10,
+  .bg-white\/20,
+  .bg-white\/30,
+  .bg-white\/50,
+  .hover\:bg-white\/5,
+  .hover\:bg-white\/10,
+  .hover\:bg-white\/20,
+  .focus\:bg-white\/5,
+  .focus\:bg-white\/10,
+  .bg-primary\/5,
+  .bg-primary\/10,
+  .bg-success\/10,
+  .bg-destructive\/10,
+  .bg-card\/50,
+  .bg-background\/10 {
+    background-color: hsl(var(--card)) !important;
+    color: hsl(var(--foreground)) !important;
+  }
+}
