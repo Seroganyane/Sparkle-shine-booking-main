@@ -1,12 +1,15 @@
 import { useEffect, useState, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Navbar } from "@/components/app/Navbar";
 import { BookingDialog } from "@/components/app/BookingDialog";
+import { Chatbot } from "@/components/app/Chatbot";
 import { PaymentDialog } from "@/components/app/PaymentDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getPackage } from "@/lib/packages";
+import { fetchWeatherPrediction } from "@/lib/weather";
 import { Bell, Car, Clock, Gift, Sparkles, CreditCard, CheckCircle2, XCircle, ListOrdered } from "lucide-react";
 import { toast } from "sonner";
 import { Database } from "@/integrations/supabase/types";
@@ -30,6 +33,13 @@ const Dashboard = () => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [payTarget, setPayTarget] = useState<{ id: string; amount: number } | null>(null);
+
+  const { data: weather, isLoading: weatherLoading, isError: weatherError } = useQuery({
+    queryKey: ["weather-prediction"],
+    queryFn: () => fetchWeatherPrediction(-26.2041, 28.0473),
+    staleTime: 1000 * 60 * 30,
+    refetchOnWindowFocus: false,
+  });
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -120,6 +130,31 @@ const Dashboard = () => {
           </div>
         </div>
 
+        <div className="mb-8 rounded-2xl border border-border bg-gradient-card p-6 shadow-card">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-3xl">
+              <div className="text-sm text-muted-foreground">Weather recommendation</div>
+              <h2 className="mt-2 font-display text-2xl font-semibold">
+                {weatherLoading
+                  ? "Checking today's weather..."
+                  : weatherError
+                  ? "Weather service unavailable"
+                  : weather?.headline ?? "Weather update unavailable"}
+              </h2>
+              <p className="mt-3 text-sm text-muted-foreground">
+                {weatherLoading
+                  ? "One moment while we find the best time to bring your car in."
+                  : weatherError
+                  ? "We couldn't load weather data right now. Please refresh later."
+                  : weather?.details}
+              </p>
+            </div>
+            <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-primary/10 text-primary sm:h-20 sm:w-20">
+              <Bell className="h-8 w-8" />
+            </div>
+          </div>
+        </div>
+
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Bookings */}
           <section className="lg:col-span-2">
@@ -134,7 +169,6 @@ const Dashboard = () => {
               <div className="space-y-3">
                 {bookings.map((b) => {
                   const pkg = getPackage(b.package);
-                  const dt = new Date(b.scheduled_at);
                   return (
                     <div key={b.id} className="rounded-2xl border border-border bg-gradient-card p-5">
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -152,9 +186,13 @@ const Dashboard = () => {
                             {b.car_make} {b.car_model} · <span className="font-mono">{b.car_plate}</span>
                           </p>
                           <p className="mt-1 text-sm">
-                            {dt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} ·{" "}
-                            {dt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                            Slot #{b.slot_number ?? "N/A"}
                           </p>
+                          {b.payment_status === "unpaid" && b.status !== "cancelled" && (
+                            <p className="mt-3 rounded-2xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
+                              Your slot is reserved. Please return to complete payment and keep your booking active.
+                            </p>
+                          )}
                         </div>
                         <div className="text-right">
                           <div className="font-display text-xl font-bold">
@@ -172,7 +210,7 @@ const Dashboard = () => {
                             <CreditCard className="h-4 w-4" /> Pay now
                           </Button>
                         )}
-                        {["pending", "confirmed"].includes(b.status) && (
+                        {["pending", "confirmed", "in_queue"].includes(b.status) && (
                           <Button size="sm" variant="ghost" onClick={() => cancel(b.id)}>
                             <XCircle className="h-4 w-4" /> Cancel
                           </Button>
@@ -201,7 +239,7 @@ const Dashboard = () => {
                     key={n.id}
                     onClick={() => markRead(n.id)}
                     className={`w-full rounded-xl border p-4 text-left transition-all ${
-                      n.read ? "border-border bg-card/50" : "border-primary/30 bg-primary/5 shadow-card"
+                      n.read ? "border-border bg-card/80" : "border-primary/30 bg-primary/20 shadow-card"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -227,6 +265,8 @@ const Dashboard = () => {
           onPaid={load}
         />
       )}
+
+      <Chatbot freeWashes={free} onBooked={load} />
     </div>
   );
 };

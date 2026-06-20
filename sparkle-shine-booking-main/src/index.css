@@ -49,19 +49,19 @@ All colors MUST be HSL.
     --shadow-card: 0 8px 32px -8px hsl(222 47% 4% / 0.6);
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
-    --sidebar-background: 0 0% 98%;
+    --sidebar-background: 222.2 84% 4.9%;
 
-    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-foreground: 210 40% 98%;
 
-    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary: 224.3 76.3% 48%;
 
-    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-primary-foreground: 0 0% 100%;
 
-    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent: 240 3.7% 15.9%;
 
-    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
 
-    --sidebar-border: 220 13% 91%;
+    --sidebar-border: 240 3.7% 15.9%;
 
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
@@ -116,5 +116,126 @@ All colors MUST be HSL.
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Space Grotesk', system-ui, sans-serif;
+  }
+}
+
+/* Force top-level backgrounds and text color to the app theme to avoid white flashes
+   Applies to html/body/root and common form elements so content is always readable.
+*/
+html,
+body,
+#root {
+  background-color: hsl(var(--background)) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+#root > * {
+  background-color: inherit !important;
+  color: inherit !important;
+}
+
+input,
+textarea,
+select,
+button {
+  color: inherit;
+}
+
+/* Force all white utilities to use dark navy background and theme text
+   Catches any legacy or dynamically-generated white classes so the
+   navbar-style dark theme applies consistently across the app.
+*/
+@layer utilities {
+  /* Override all white and very light background classes */
+  [class*="bg-white"],
+  .bg-white,
+  .dark .bg-white,
+  [class*="bg-slate-50"],
+  [class*="bg-slate-100"],
+  [class*="bg-slate-200"],
+  [class*="bg-slate-300"],
+  [class*="bg-gray-50"],
+  [class*="bg-gray-100"],
+  [class*="bg-gray-200"],
+  [class*="bg-gray-300"],
+  [class*="bg-zinc-50"],
+  [class*="bg-zinc-100"],
+  [class*="bg-zinc-200"],
+  [class*="bg-zinc-300"],
+  [class*="bg-stone-50"],
+  [class*="bg-stone-100"],
+  [class*="bg-stone-200"],
+  [class*="bg-stone-300"],
+  [class*="bg-neutral-50"],
+  [class*="bg-neutral-100"],
+  [class*="bg-neutral-200"],
+  [class*="bg-neutral-300"],
+  .bg-slate-50,
+  .bg-slate-100,
+  .bg-slate-200,
+  .bg-slate-300,
+  .bg-gray-50,
+  .bg-gray-100,
+  .bg-gray-200,
+  .bg-gray-300,
+  .bg-zinc-50,
+  .bg-zinc-100,
+  .bg-zinc-200,
+  .bg-zinc-300,
+  .bg-stone-50,
+  .bg-stone-100,
+  .bg-stone-200,
+  .bg-stone-300,
+  .bg-neutral-50,
+  .bg-neutral-100,
+  .bg-neutral-200,
+  .bg-neutral-300 {
+    background-color: hsl(var(--background)) !important;
+    color: hsl(var(--foreground)) !important;
+  }
+
+  /* Override all border-white and light border variants */
+  [class*="border-white"],
+  .border-white,
+  .dark .border-white,
+  [class*="border-gray-100"],
+  [class*="border-slate-100"],
+  [class*="border-zinc-100"],
+  .border-gray-100,
+  .border-slate-100,
+  .border-zinc-100 {
+    border-color: hsl(var(--border)) !important;
+  }
+
+  /* Override text-white and light text colors */
+  [class*="text-white"],
+  .text-white,
+  .dark .text-white,
+  [class*="text-gray-100"],
+  [class*="text-slate-100"],
+  .text-gray-100,
+  .text-slate-100 {
+    color: hsl(var(--foreground)) !important;
+  }
+
+  /* Override common escaped Tailwind white classes */
+  .bg-white\/5,
+  .bg-white\/10,
+  .bg-white\/20,
+  .bg-white\/30,
+  .bg-white\/50,
+  .hover\:bg-white\/5,
+  .hover\:bg-white\/10,
+  .hover\:bg-white\/20,
+  .focus\:bg-white\/5,
+  .focus\:bg-white\/10,
+  .bg-primary\/5,
+  .bg-primary\/10,
+  .bg-success\/10,
+  .bg-destructive\/10,
+  .bg-card\/50,
+  .bg-background\/10 {
+    background-color: hsl(var(--card)) !important;
+    color: hsl(var(--foreground)) !important;
   }
 }

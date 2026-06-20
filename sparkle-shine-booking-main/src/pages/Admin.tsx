@@ -58,15 +58,63 @@ const Admin = () => {
     };
   }, [load]);
 
-  // queue: confirmed/in_queue/in_progress, ordered by queue_position then scheduled_at
+  // queue: pending/confirmed/in_queue/in_progress, ordered by queue_position then scheduled_at
   const queueBookings = bookings
-    .filter((b) => ["confirmed", "in_queue", "in_progress", "pending"].includes(b.status))
+    .filter((b) => ["pending", "confirmed", "in_queue", "in_progress"].includes(b.status))
     .sort((a, b) => {
       const aq = a.queue_position ?? 9999;
       const bq = b.queue_position ?? 9999;
       if (aq !== bq) return aq - bq;
       return new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime();
     });
+
+  const slotNumbers = Array.from({ length: 10 }, (_, i) => i + 1);
+  const slotSummaries = slotNumbers.map((slot) => {
+    const assigned = bookings
+      .filter((b) => b.slot_number === slot && !["completed", "cancelled"].includes(b.status))
+      .sort((a, b) => {
+        const weight = (status: BookingStatus) => {
+          if (status === "in_progress") return 0;
+          if (status === "confirmed") return 1;
+          if (status === "in_queue") return 2;
+          return 3;
+        };
+        return weight(a.status) - weight(b.status) || new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      });
+    return {
+      slot,
+      booking: assigned[0] || null,
+      busy: assigned.length > 0,
+    };
+  });
+
+  useEffect(() => {
+    const promoteSlots = async () => {
+      const updates: Promise<unknown>[] = [];
+      for (const slot of slotNumbers) {
+        const hasActive = bookings.some((b) => b.slot_number === slot && b.status === "in_progress");
+        if (hasActive) continue;
+        const nextBooking = bookings
+          .filter((b) => b.slot_number === slot && ["confirmed", "in_queue"].includes(b.status))
+          .sort((a, b) => {
+            const aq = a.queue_position ?? 9999;
+            const bq = b.queue_position ?? 9999;
+            if (aq !== bq) return aq - bq;
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          })[0];
+        if (nextBooking) {
+          updates.push(supabase.from("bookings").update({ status: "in_progress" }).eq("id", nextBooking.id));
+        }
+      }
+      if (updates.length) {
+        await Promise.all(updates);
+      }
+    };
+
+    if (bookings.length) {
+      promoteSlots();
+    }
+  }, [bookings]);
 
   const completedBookings = bookings.filter((b) => b.status === "completed");
   const completedToday = completedBookings.filter((b) => new Date(b.updated_at).toDateString() === new Date().toDateString());
@@ -143,8 +191,35 @@ const Admin = () => {
         </div>
 
         {/* Stats */}
+        <div className="mb-8">
+          <h2 className="mb-4 font-display text-xl font-semibold">Employee slots</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            {slotSummaries.map(({ slot, booking, busy }) => (
+              <div key={slot} className="rounded-2xl border border-border bg-gradient-card p-5 shadow-card">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm text-muted-foreground">Employee {slot}</div>
+                    <div className="font-display text-xl font-bold">Slot {slot}</div>
+                  </div>
+                  <Badge variant="outline" className={busy ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-success/30 bg-success/10 text-success"}>
+                    {busy ? `Reserved · ${booking?.status.replace("_", " ")}` : "Available"}
+                  </Badge>
+                </div>
+                {booking ? (
+                  <div className="mt-4 space-y-1 text-sm text-muted-foreground">
+                    <div>{booking.car_make} {booking.car_model}</div>
+                    <div>#{booking.car_plate}</div>
+                    <div>{getPackage(booking.package).name}</div>
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm text-muted-foreground">Ready for the next car.</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
         <div className="mb-8 grid gap-4 md:grid-cols-4">
-          <StatCard icon={Car} label="In queue" value={queueBookings.filter((b) => b.queue_position).length} />
+          <StatCard icon={Car} label="Busy slots" value={slotSummaries.filter((slot) => slot.busy).length} />
           <StatCard icon={CheckCircle2} label="Completed today" value={bookings.filter((b) => b.status === "completed" && new Date(b.updated_at).toDateString() === new Date().toDateString()).length} />
           <StatCard icon={Users} label="Total customers" value={profiles.length} />
           <StatCard icon={Bell} label="Total bookings" value={bookings.length} />
@@ -176,7 +251,6 @@ const Admin = () => {
           ) : (
             visible.map((b) => {
               const pkg = getPackage(b.package);
-              const dt = new Date(b.scheduled_at);
               return (
                 <div key={b.id} className="rounded-2xl border border-border bg-gradient-card p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -195,9 +269,7 @@ const Admin = () => {
                         <p className="mt-1 text-sm text-muted-foreground">
                           {b.car_make} {b.car_model} · <span className="font-mono">{b.car_plate}</span> · {b.profile?.phone}
                         </p>
-                        <p className="mt-1 text-sm">
-                          {dt.toLocaleString()} · R {Number(b.amount).toFixed(2)} · {b.payment_status}
-                        </p>
+                        <p className="mt-1 text-sm">Slot #{b.slot_number ?? "N/A"} · R {Number(b.amount).toFixed(2)} · {b.payment_status}</p>
                         {b.notes && <p className="mt-1 text-xs italic text-muted-foreground">"{b.notes}"</p>}
                       </div>
                     </div>

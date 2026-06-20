@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -11,21 +11,85 @@ import { PACKAGES, PackageId, getPackage } from "@/lib/packages";
 import { toast } from "sonner";
 import { Loader2, Plus, Gift } from "lucide-react";
 
+const ALL_SLOTS = Array.from({ length: 10 }, (_, i) => i + 1);
+
 const schema = z.object({
   car_make: z.string().trim().min(1).max(50),
   car_model: z.string().trim().min(1).max(50),
   car_plate: z.string().trim().min(1).max(15),
-  scheduled_at: z.string().min(1),
+  slot_number: z.number().int().min(1).max(10),
   notes: z.string().max(500).optional(),
 });
 
-export const BookingDialog = ({ freeWashes, onBooked }: { freeWashes: number; onBooked: () => void }) => {
+export const BookingDialog = ({
+  freeWashes,
+  onBooked,
+  open: openProp,
+  onOpenChange: onOpenChangeProp,
+}: {
+  freeWashes: number;
+  onBooked: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) => {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
+  const controlled = typeof openProp === "boolean";
+  const dialogOpen = controlled ? openProp : open;
+  const setDialogOpen = (value: boolean) => {
+    if (onOpenChangeProp) {
+      onOpenChangeProp(value);
+    }
+    if (!controlled) {
+      setOpen(value);
+    }
+  };
   const [loading, setLoading] = useState(false);
   const [pkg, setPkg] = useState<PackageId>("premium");
   const [useFree, setUseFree] = useState(false);
-  const [form, setForm] = useState({ car_make: "", car_model: "", car_plate: "", scheduled_at: "", notes: "" });
+  const [availableSlots, setAvailableSlots] = useState<number[]>(ALL_SLOTS);
+  const [form, setForm] = useState({ car_make: "", car_model: "", car_plate: "", slot_number: 0, notes: "" });
+
+  const loadSlots = async () => {
+    const result = await supabase
+      .from("bookings")
+      .select("slot_number,status")
+      .in("status", ["pending", "confirmed", "in_queue", "in_progress"]);
+    const rows = (result.data as Array<{ slot_number: number | null }> | null) || [];
+    const occupied = new Set<number>(
+      rows
+        .map((row) => row.slot_number)
+        .filter((slot): slot is number => typeof slot === "number")
+    );
+    const free = ALL_SLOTS.filter((slot) => !occupied.has(slot));
+    setAvailableSlots(free);
+    if (form.slot_number && occupied.has(form.slot_number)) {
+      setForm((prev) => ({ ...prev, slot_number: 0 }));
+    }
+  };
+
+  const getNextQueuePosition = async () => {
+    const { data } = await supabase
+      .from("bookings")
+      .select("queue_position")
+      .in("status", ["confirmed", "in_queue", "in_progress"])
+      .order("queue_position", { ascending: false })
+      .limit(1);
+
+    const maxPos = data?.[0]?.queue_position ?? 0;
+    return maxPos + 1;
+  };
+
+  useEffect(() => {
+    loadSlots();
+    const channel = supabase
+      .channel("booking-slots")
+      .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, loadSlots)
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,20 +99,28 @@ export const BookingDialog = ({ freeWashes, onBooked }: { freeWashes: number; on
       toast.error(parsed.error.issues[0].message);
       return;
     }
+    if (!availableSlots.includes(parsed.data.slot_number)) {
+      toast.error("Selected slot is no longer available. Please choose another slot.");
+      loadSlots();
+      return;
+    }
     setLoading(true);
     try {
       const selected = getPackage(pkg);
+      const queue_position = useFree ? await getNextQueuePosition() : null;
       const { error } = await supabase.from("bookings").insert({
         user_id: user.id,
         car_make: parsed.data.car_make,
         car_model: parsed.data.car_model,
         car_plate: parsed.data.car_plate.toUpperCase(),
         package: pkg,
-        scheduled_at: new Date(parsed.data.scheduled_at).toISOString(),
+        slot_number: parsed.data.slot_number,
+        scheduled_at: new Date().toISOString(),
         notes: parsed.data.notes || null,
         amount: useFree ? 0 : selected.price,
         payment_status: useFree ? "free" : "unpaid",
-        status: "pending",
+        status: useFree ? "in_queue" : "pending",
+        queue_position,
       });
       if (error) throw error;
       if (useFree) {
@@ -65,7 +137,7 @@ export const BookingDialog = ({ freeWashes, onBooked }: { freeWashes: number; on
       });
       toast.success("Booking created!");
       setOpen(false);
-      setForm({ car_make: "", car_model: "", car_plate: "", scheduled_at: "", notes: "" });
+      setForm({ car_make: "", car_model: "", car_plate: "", slot_number: 0, notes: "" });
       setUseFree(false);
       onBooked();
     } catch (err: unknown) {
@@ -76,10 +148,8 @@ export const BookingDialog = ({ freeWashes, onBooked }: { freeWashes: number; on
     }
   };
 
-  const minDate = new Date(Date.now() + 30 * 60 * 1000).toISOString().slice(0, 16);
-
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
       <DialogTrigger asChild>
         <Button variant="hero" size="lg">
           <Plus className="h-5 w-5" /> New booking
@@ -99,7 +169,7 @@ export const BookingDialog = ({ freeWashes, onBooked }: { freeWashes: number; on
                   key={p.id}
                   onClick={() => setPkg(p.id)}
                   className={`rounded-xl border p-3 text-left transition-all ${
-                    pkg === p.id ? "border-primary bg-primary/10 shadow-glow" : "border-border hover:border-primary/40"
+                    pkg === p.id ? "border-primary bg-primary/20 shadow-glow" : "border-border hover:border-primary/40"
                   }`}
                 >
                   <div className="text-xs text-muted-foreground">{p.duration}</div>
@@ -115,7 +185,7 @@ export const BookingDialog = ({ freeWashes, onBooked }: { freeWashes: number; on
               type="button"
               onClick={() => setUseFree(!useFree)}
               className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-all ${
-                useFree ? "border-success bg-success/10" : "border-border hover:border-success/40"
+                useFree ? "border-success bg-success/20" : "border-border hover:border-success/40"
               }`}
             >
               <Gift className="h-5 w-5 text-success" />
@@ -142,8 +212,36 @@ export const BookingDialog = ({ freeWashes, onBooked }: { freeWashes: number; on
             <Input id="plate" placeholder="ABC 123" value={form.car_plate} onChange={(e) => setForm({ ...form, car_plate: e.target.value })} required />
           </div>
           <div>
-            <Label htmlFor="when">When</Label>
-            <Input id="when" type="datetime-local" min={minDate} value={form.scheduled_at} onChange={(e) => setForm({ ...form, scheduled_at: e.target.value })} required />
+            <Label>Choose your slot</Label>
+            <div className="mt-2 grid grid-cols-5 gap-2">
+              {ALL_SLOTS.map((slot) => {
+                const taken = !availableSlots.includes(slot);
+                const selected = form.slot_number === slot;
+                return (
+                  <button
+                    key={slot}
+                    type="button"
+                    onClick={() => !taken && setForm({ ...form, slot_number: slot })}
+                    disabled={taken}
+                    className={`rounded-2xl border p-3 text-sm font-semibold transition-all ${
+                      taken
+                        ? "cursor-not-allowed border-destructive/40 bg-destructive/20 text-destructive"
+                        : selected
+                        ? "border-primary bg-primary/20 text-primary"
+                        : "border-border bg-card hover:border-primary/40"
+                    }`}
+                  >
+                    Slot {slot}
+                    <div className="text-xs">
+                      {taken ? "Unavailable" : "Available"}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            {availableSlots.length === 0 && (
+              <p className="mt-2 text-sm text-destructive">No slots are currently available. Please try again later.</p>
+            )}
           </div>
           <div>
             <Label htmlFor="notes">Notes (optional)</Label>

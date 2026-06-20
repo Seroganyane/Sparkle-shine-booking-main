@@ -32,8 +32,17 @@ type MockOrderBuilder = {
   then: (callback: (result: MockResponse<unknown>) => void) => void;
 };
 
+type Query = {
+  eq: (column: string, value: string) => Query;
+  in: (column: string, values: string[]) => Query;
+  order: (column: string, options?: { ascending?: boolean }) => MockOrderBuilder;
+  maybeSingle: () => Promise<MockResponse<unknown>>;
+  then: (callback: (result: MockResponse<unknown>) => void) => void;
+};
+
 type MockSelectBuilder = {
-  eq: (column: string, value: string) => { maybeSingle: () => Promise<MockResponse<unknown>> };
+  eq: (column: string, value: string) => MockQueryResult & Query;
+  in: (column: string, values: string[]) => MockQueryResult & Query;
   order: (column: string, options?: unknown) => MockOrderBuilder;
 };
 
@@ -98,36 +107,60 @@ class MockSupabaseClient {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(this.db));
   }
 
+  private findProfileByEmail(email: string) {
+    return this.db.profiles.find((profile) => profile.email === email);
+  }
+
   private ensureProfileForUser(user: MockUser) {
-    const exists = this.db.profiles.some((profile) => profile.id === user.id);
-    if (!exists) {
-      this.db.profiles.push({
-        id: user.id,
-        email: user.email,
-        full_name: user.user_metadata.full_name || user.email.split('@')[0],
-        reward_points: 0,
-        free_washes: 0
-      });
+    const existing = this.db.profiles.find((profile) => profile.id === user.id);
+    if (!existing) {
+      const profileByEmail = this.findProfileByEmail(user.email);
+      const id = profileByEmail ? profileByEmail.id : user.id;
+      if (!profileByEmail) {
+        this.db.profiles.push({
+          id,
+          email: user.email,
+          full_name: user.user_metadata.full_name || user.email.split('@')[0],
+          reward_points: 0,
+          free_washes: 0
+        });
+      }
       this.saveDb();
     }
   }
 
   private getTable(table: string): Array<Record<string, unknown>> {
-    return (this.db as any)[table] ?? [];
+    const dbMap = this.db as unknown as Record<string, Array<Record<string, unknown>>>;
+    return dbMap[table] ?? [];
   }
 
   private setTable(table: string, rows: Array<Record<string, unknown>>) {
-    (this.db as any)[table] = rows;
+    const dbMap = this.db as unknown as Record<string, Array<Record<string, unknown>>>;
+    dbMap[table] = rows;
     this.saveDb();
   }
 
   private buildQuery(table: string, columns: string) {
-    const filters: Array<{ column: string; value: string }> = [];
+    type Filter =
+      | { type: 'eq'; column: string; value: string }
+      | { type: 'in'; column: string; values: string[] };
+
+    const filters: Array<Filter> = [];
     let orderColumn: string | null = null;
     let orderAscending = true;
 
     const applyFilters = (rows: Array<Record<string, unknown>>) => {
-      return rows.filter((row) => filters.every((filter) => String(row[filter.column]) === filter.value));
+      return rows.filter((row) =>
+        filters.every((filter) => {
+          if (filter.type === 'eq') {
+            return String(row[filter.column]) === filter.value;
+          }
+          if (filter.type === 'in') {
+            return filter.values.map(String).includes(String(row[filter.column]));
+          }
+          return true;
+        })
+      );
     };
 
     const applyOrder = (rows: Array<Record<string, unknown>>) => {
@@ -145,15 +178,27 @@ class MockSupabaseClient {
       return applyOrder(rows);
     };
 
-    const query: any = {
+    type Query = {
+      eq: (column: string, value: string) => Query;
+      in: (column: string, values: string[]) => Query;
+      order: (column: string, options?: { ascending?: boolean }) => MockOrderBuilder;
+      maybeSingle: () => Promise<MockResponse<unknown>>;
+      then: (callback: (result: MockResponse<unknown>) => void) => void;
+    };
+
+    const query: Query = {
       eq: (column: string, value: string) => {
-        filters.push({ column, value });
+        filters.push({ type: 'eq', column, value });
         return query;
       },
-      order: (column: string, options?: unknown) => {
+      in: (column: string, values: string[]) => {
+        filters.push({ type: 'in', column, values });
+        return query;
+      },
+      order: (column: string, options?: { ascending?: boolean }) => {
         orderColumn = column;
-        if (options && typeof options === 'object' && 'ascending' in (options as any)) {
-          orderAscending = (options as any).ascending !== false;
+        if (options && typeof options === 'object' && 'ascending' in options) {
+          orderAscending = options.ascending !== false;
         }
         return orderBuilder;
       },
@@ -187,15 +232,23 @@ class MockSupabaseClient {
     signInWithPassword: async (credentials: { email: string; password: string }) => {
       const { email, password } = credentials;
       let mockUser: MockUser;
-      let mockSession: MockSession;
 
       if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
         mockUser = { id: 'admin-user-id', email: ADMIN_EMAIL, user_metadata: { full_name: 'Admin User' } };
-        mockSession = { user: mockUser, access_token: 'mock-admin-token' };
       } else {
-        mockUser = { id: `user-${Date.now()}`, email, user_metadata: { full_name: email.split('@')[0] } };
-        mockSession = { user: mockUser, access_token: 'mock-user-token' };
+        const existingProfile = this.findProfileByEmail(email);
+        if (existingProfile) {
+          mockUser = {
+            id: existingProfile.id,
+            email,
+            user_metadata: { full_name: existingProfile.full_name }
+          };
+        } else {
+          mockUser = { id: `user-${Date.now()}`, email, user_metadata: { full_name: email.split('@')[0] } };
+        }
       }
+
+      const mockSession = { user: mockUser, access_token: email === ADMIN_EMAIL ? 'mock-admin-token' : 'mock-user-token' };
 
       this.ensureProfileForUser(mockUser);
       localStorage.setItem('mock_session', JSON.stringify(mockSession));
@@ -211,11 +264,10 @@ class MockSupabaseClient {
 
     signUp: async (credentials: { email: string; password: string; options?: { data?: { full_name?: string } } }) => {
       const { email, options } = credentials;
-      const mockUser: MockUser = {
-        id: `user-${Date.now()}`,
-        email,
-        user_metadata: { full_name: options?.data?.full_name || email.split('@')[0] }
-      };
+      const existingProfile = this.findProfileByEmail(email);
+      const mockUser: MockUser = existingProfile
+        ? { id: existingProfile.id, email, user_metadata: { full_name: options?.data?.full_name || existingProfile.full_name } }
+        : { id: `user-${Date.now()}`, email, user_metadata: { full_name: options?.data?.full_name || email.split('@')[0] } };
       const mockSession: MockSession = { user: mockUser, access_token: 'mock-signup-token' };
 
       this.ensureProfileForUser(mockUser);
@@ -323,26 +375,27 @@ class MockSupabaseClient {
   private insertData(table: string, data: unknown): MockResponse<unknown> {
     const rows = Array.isArray(data) ? data : [data];
     const savedRows = this.getTable(table);
-    const inserted = rows.map((row: any) => {
-      const id = row?.id || `${table}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const inserted = rows.map((row: Record<string, unknown>) => {
+      const id = (row && (row.id as string)) || `${table}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const now = getNow();
       return {
         ...row,
         id,
-        created_at: row?.created_at || now,
-        updated_at: row?.updated_at || now
-      };
+        created_at: (row && (row.created_at as string)) || now,
+        updated_at: (row && (row.updated_at as string)) || now
+      } as Record<string, unknown>;
     });
-    this.setTable(table, [...savedRows, ...inserted]);
+    this.setTable(table, savedRows.concat(inserted));
     return { data: inserted, error: null };
   }
 
   private updateData(table: string, data: unknown, column: string, value: string): MockResponse<unknown> {
     const rows = this.getTable(table);
     const updated: Array<Record<string, unknown>> = [];
+    const patch = (data as Record<string, unknown>) ?? {};
     const newRows = rows.map((row) => {
       if (String(row[column]) === value) {
-        const next = { ...row, ...data, updated_at: getNow() } as Record<string, unknown>;
+        const next: Record<string, unknown> = { ...row, ...patch, updated_at: getNow() };
         updated.push(next);
         return next;
       }

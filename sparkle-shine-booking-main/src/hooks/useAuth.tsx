@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 // Mock user and session types to match Supabase structure
 type MockUser = {
@@ -50,6 +51,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     }
     setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    const authListener = supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        setSession(session);
+        setUser(session.user);
+        setIsAdmin(session.user.email === ADMIN_EMAIL);
+      } else {
+        setSession(null);
+        setUser(null);
+        setIsAdmin(false);
+      }
+      setLoading(false);
+    });
+
+    return () => {
+      authListener.data.subscription.unsubscribe();
+    };
   }, []);
 
   // Listen for storage changes to update auth state
@@ -108,6 +128,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUser(mockUser);
     setIsAdmin(true);
     localStorage.setItem('mock_session', JSON.stringify(mockSession));
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'mock_session',
+      oldValue: null,
+      newValue: JSON.stringify(mockSession),
+      storageArea: localStorage
+    }));
   };
 
   // Make mock auth available globally for components that import supabase

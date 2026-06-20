@@ -1,0 +1,40 @@
+{
+  "name": "sparkle-shine-mobile",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "eject": "expo eject"
+  },
+  "dependencies": {
+    "expo": "^51.0.0",
+    "expo-status-bar": "^1.12.1",
+    "expo-linear-gradient": "^12.8.1",
+    "expo-splash-screen": "^0.27.4",
+    "react": "^18.2.0",
+    "react-native": "^0.74.0",
+    "@react-navigation/native": "^6.1.8",
+    "@react-navigation/bottom-tabs": "^6.5.11",
+    "@react-navigation/stack": "^6.3.17",
+    "react-native-screens": "^3.29.0",
+    "react-native-safe-area-context": "^4.8.2",
+    "react-native-gesture-handler": "^2.14.0",
+    "@supabase/supabase-js": "^2.39.0",
+    "@tanstack/react-query": "^5.28.0",
+    "react-hook-form": "^7.48.1",
+    "zod": "^3.22.4",
+    "@hookform/resolvers": "^3.3.4",
+    "date-fns": "^2.30.0",
+    "lucide-react-native": "^0.263.1",
+    "async-storage": "@react-native-async-storage/async-storage@^1.21.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.37",
+    "@types/react-native": "^0.73.0",
+    "typescript": "^5.2.2"
+  },
+  "private": true
+}

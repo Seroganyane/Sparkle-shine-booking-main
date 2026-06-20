@@ -26,6 +26,7 @@ export type Database = {
           package: Database["public"]["Enums"]["wash_package"]
           payment_status: Database["public"]["Enums"]["payment_status"]
           queue_position: number | null
+          slot_number: number | null
           scheduled_at: string
           status: Database["public"]["Enums"]["booking_status"]
           updated_at: string
@@ -42,6 +43,7 @@ export type Database = {
           package?: Database["public"]["Enums"]["wash_package"]
           payment_status?: Database["public"]["Enums"]["payment_status"]
           queue_position?: number | null
+          slot_number?: number | null
           scheduled_at: string
           status?: Database["public"]["Enums"]["booking_status"]
           updated_at?: string
@@ -58,6 +60,7 @@ export type Database = {
           package?: Database["public"]["Enums"]["wash_package"]
           payment_status?: Database["public"]["Enums"]["payment_status"]
           queue_position?: number | null
+          slot_number?: number | null
           scheduled_at?: string
           status?: Database["public"]["Enums"]["booking_status"]
           updated_at?: string

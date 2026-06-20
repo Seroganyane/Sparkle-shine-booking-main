@@ -23,15 +23,52 @@ export const PaymentDialog = ({
   const [loading, setLoading] = useState(false);
   const [card, setCard] = useState({ number: "", exp: "", cvc: "", name: "" });
 
+  const getNextQueuePosition = async () => {
+    const { data } = await supabase
+      .from("bookings")
+      .select("queue_position")
+      .in("status", ["confirmed", "in_queue", "in_progress"])
+      .order("queue_position", { ascending: false })
+      .limit(1);
+
+    const maxPos = data?.[0]?.queue_position ?? 0;
+    return maxPos + 1;
+  };
+
   const pay = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     // Simulated payment — replace with real Stripe later
     await new Promise((r) => setTimeout(r, 1200));
+
+    const { data: bookingData, error: fetchError } = await supabase
+      .from("bookings")
+      .select("queue_position, user_id")
+      .eq("id", bookingId)
+      .maybeSingle();
+
+    if (fetchError) {
+      setLoading(false);
+      toast.error(fetchError.message);
+      return;
+    }
+
+    const nextQueuePosition = bookingData?.queue_position ?? (await getNextQueuePosition());
+
     const { error } = await supabase
       .from("bookings")
-      .update({ payment_status: "paid", status: "confirmed" })
+      .update({ payment_status: "paid", status: "in_queue", queue_position: nextQueuePosition })
       .eq("id", bookingId);
+
+    if (!error && bookingData?.user_id) {
+      await supabase.from("notifications").insert({
+        user_id: bookingData.user_id,
+        title: "Your car is ready to be washed",
+        message: "Your slot is paid and reserved. Your car is now in the queue and will be washed soon.",
+        type: "booking",
+      });
+    }
+
     setLoading(false);
     if (error) {
       toast.error(error.message);
