@@ -8,8 +8,10 @@ import NotFound from "./pages/NotFound.tsx";
 import Auth from "./pages/Auth.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
 import Admin from "./pages/Admin.tsx";
+import Shop from "./pages/Shop.tsx";
 import { AuthProvider } from "./hooks/useAuth";
 import { ProtectedRoute } from "./components/app/ProtectedRoute";
+import { CartProvider } from "@/lib/cart";
 
 const queryClient = new QueryClient();
 
@@ -20,14 +22,17 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <Routes>
+          <CartProvider>
+            <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/shop" element={<Shop />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute adminOnly><Admin /></ProtectedRoute>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </CartProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

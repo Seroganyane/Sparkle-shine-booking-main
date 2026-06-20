@@ -33,6 +33,11 @@ export const Navbar = () => {
                   </Link>
                 </Button>
               )}
+
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/shop">Shop</Link>
+              </Button>
+
               <Button variant="glass" size="sm" onClick={handleSignOut}>
                 <LogOut className="h-4 w-4" /> Sign out
               </Button>
