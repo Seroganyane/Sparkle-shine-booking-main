@@ -1,143 +1,92 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-// Mock user and session types to match Supabase structure
-type MockUser = {
-  id: string;
-  email: string;
-  user_metadata: {
-    full_name?: string;
-  };
-};
-
-type MockSession = {
-  user: MockUser;
-  access_token: string;
-};
+type AppSession = NonNullable<Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"]>;
+type AppUser = AppSession["user"];
 
 type AuthCtx = {
-  user: MockUser | null;
-  session: MockSession | null;
+  user: AppUser | null;
+  session: AppSession | null;
   isAdmin: boolean;
   loading: boolean;
   signOut: () => Promise<void>;
-  signInAsAdmin: () => void;
+  signInAsAdmin: (credentials?: { email: string; password: string }) => Promise<void>;
 };
 
 const Ctx = createContext<AuthCtx>({} as AuthCtx);
 
-// Mock admin credentials
-const ADMIN_EMAIL = "seroganyanemathaba@gmail.com";
-const ADMIN_PASSWORD = "Ponagalo#2026";
+const checkIsAdmin = async (userId?: string) => {
+  if (!userId) return false;
+
+  const { data } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("role", "admin")
+    .maybeSingle();
+
+  return Boolean(data);
+};
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [session, setSession] = useState<MockSession | null>(null);
-  const [user, setUser] = useState<MockUser | null>(null);
+  const [session, setSession] = useState<AppSession | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Check for existing session in localStorage
-    const savedSession = localStorage.getItem('mock_session');
-    if (savedSession) {
-      try {
-        const parsedSession = JSON.parse(savedSession);
-        setSession(parsedSession);
-        setUser(parsedSession.user);
-        // Check if this is an admin user
-        setIsAdmin(parsedSession.user.email === ADMIN_EMAIL);
-      } catch (error) {
-        localStorage.removeItem('mock_session');
-      }
+  const syncSession = async (nextSession: AppSession | null) => {
+    setSession(nextSession);
+    const nextUser = nextSession?.user ?? null;
+    setUser(nextUser);
+
+    if (!nextUser) {
+      setIsAdmin(false);
+      return;
     }
-    setLoading(false);
-  }, []);
+
+    const admin = await checkIsAdmin(nextUser.id);
+    setIsAdmin(admin);
+  };
 
   useEffect(() => {
-    const authListener = supabase.auth.onAuthStateChange((event, session) => {
-      if (session) {
-        setSession(session);
-        setUser(session.user);
-        setIsAdmin(session.user.email === ADMIN_EMAIL);
-      } else {
-        setSession(null);
-        setUser(null);
-        setIsAdmin(false);
-      }
+    let isMounted = true;
+
+    const initAuth = async () => {
+      const { data: { session: initialSession } } = await supabase.auth.getSession();
+      if (!isMounted) return;
+      await syncSession(initialSession);
+      setLoading(false);
+    };
+
+    void initAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      void syncSession(nextSession);
       setLoading(false);
     });
 
     return () => {
-      authListener.data.subscription.unsubscribe();
+      isMounted = false;
+      subscription.unsubscribe();
     };
-  }, []);
-
-  // Listen for storage changes to update auth state
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'mock_session') {
-        if (e.newValue) {
-          try {
-            const parsedSession = JSON.parse(e.newValue);
-            setSession(parsedSession);
-            setUser(parsedSession.user);
-            setIsAdmin(parsedSession.user.email === ADMIN_EMAIL);
-          } catch (error) {
-            setSession(null);
-            setUser(null);
-            setIsAdmin(false);
-          }
-        } else {
-          setSession(null);
-          setUser(null);
-          setIsAdmin(false);
-        }
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
   const signOut = async () => {
-    setSession(null);
-    setUser(null);
-    setIsAdmin(false);
-    localStorage.removeItem('mock_session');
-    // Dispatch storage event to notify other components
-    window.dispatchEvent(new StorageEvent('storage', {
-      key: 'mock_session',
-      oldValue: localStorage.getItem('mock_session'),
-      newValue: null,
-      storageArea: localStorage
-    }));
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+    await syncSession(null);
   };
 
-  const signInAsAdmin = () => {
-    const mockUser: MockUser = {
-      id: 'admin-user-id',
-      email: ADMIN_EMAIL,
-      user_metadata: { full_name: 'Admin User' }
-    };
-    const mockSession: MockSession = {
-      user: mockUser,
-      access_token: 'mock-admin-token'
-    };
+  const signInAsAdmin = async (credentials?: { email: string; password: string }) => {
+    if (!credentials?.email || !credentials?.password) {
+      throw new Error("Admin email and password are required.");
+    }
 
-    setSession(mockSession);
-    setUser(mockUser);
-    setIsAdmin(true);
-    localStorage.setItem('mock_session', JSON.stringify(mockSession));
-    window.dispatchEvent(new StorageEvent('storage', {
-      key: 'mock_session',
-      oldValue: null,
-      newValue: JSON.stringify(mockSession),
-      storageArea: localStorage
-    }));
+    const { data, error } = await supabase.auth.signInWithPassword(credentials);
+
+    if (error) throw error;
+    await syncSession(data.session);
   };
-
-  // Make mock auth available globally for components that import supabase
-  // Note: Auth is now handled directly by the mock Supabase client
 
   return <Ctx.Provider value={{ user, session, isAdmin, loading, signOut, signInAsAdmin }}>{children}</Ctx.Provider>;
 };

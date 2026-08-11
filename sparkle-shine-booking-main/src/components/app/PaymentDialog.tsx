@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Loader2, CreditCard, Lock } from "lucide-react";
+import { openPaystackCheckout } from "@/lib/paystack";
 
 export const PaymentDialog = ({
   open,
@@ -21,7 +20,6 @@ export const PaymentDialog = ({
   onPaid: () => void;
 }) => {
   const [loading, setLoading] = useState(false);
-  const [card, setCard] = useState({ number: "", exp: "", cvc: "", name: "" });
 
   const getNextQueuePosition = async () => {
     const { data } = await supabase
@@ -38,18 +36,34 @@ export const PaymentDialog = ({
   const pay = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    // Simulated payment — replace with real Stripe later
-    await new Promise((r) => setTimeout(r, 1200));
 
     const { data: bookingData, error: fetchError } = await supabase
       .from("bookings")
-      .select("queue_position, user_id")
+      .select("queue_position, user_id, user:profiles(email)")
       .eq("id", bookingId)
       .maybeSingle();
 
     if (fetchError) {
       setLoading(false);
       toast.error(fetchError.message);
+      return;
+    }
+
+    const email = bookingData?.user?.email ?? "customer@example.com";
+
+    const paystack = await openPaystackCheckout({
+      email,
+      amount,
+      reference: `booking-${bookingId}-${Date.now()}`,
+      metadata: {
+        type: "booking_payment",
+        booking_id: bookingId,
+      },
+    });
+
+    if (paystack.status === "cancelled") {
+      setLoading(false);
+      toast.info("Payment cancelled");
       return;
     }
 
@@ -77,7 +91,6 @@ export const PaymentDialog = ({
     toast.success("Payment successful!");
     onPaid();
     onOpenChange(false);
-    setCard({ number: "", exp: "", cvc: "", name: "" });
   };
 
   return (
@@ -93,36 +106,10 @@ export const PaymentDialog = ({
             <div className="text-sm text-muted-foreground">Total</div>
             <div className="font-display text-3xl font-bold">R {amount.toFixed(2)}</div>
           </div>
-          <div>
-            <Label>Cardholder name</Label>
-            <Input required value={card.name} onChange={(e) => setCard({ ...card, name: e.target.value })} placeholder="Jane Doe" />
-          </div>
-          <div>
-            <Label>Card number</Label>
-            <Input
-              required
-              inputMode="numeric"
-              maxLength={19}
-              value={card.number}
-              onChange={(e) => setCard({ ...card, number: e.target.value.replace(/\D/g, "").replace(/(.{4})/g, "$1 ").trim() })}
-              placeholder="4242 4242 4242 4242"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>Expiry</Label>
-              <Input required maxLength={5} value={card.exp} onChange={(e) => setCard({ ...card, exp: e.target.value })} placeholder="MM/YY" />
-            </div>
-            <div>
-              <Label>CVC</Label>
-              <Input required maxLength={4} value={card.cvc} onChange={(e) => setCard({ ...card, cvc: e.target.value })} placeholder="123" />
-            </div>
-          </div>
           <Button type="submit" variant="hero" size="lg" className="w-full" disabled={loading}>
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
             Pay R {amount.toFixed(2)}
           </Button>
-          <p className="text-center text-xs text-muted-foreground">Demo checkout — no real card is charged.</p>
         </form>
       </DialogContent>
     </Dialog>

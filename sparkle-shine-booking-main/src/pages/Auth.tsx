@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Droplets, Loader2, Shield } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { getAuthRedirectUrl } from "@/lib/authRedirect";
 
 const signUpSchema = z.object({
   fullName: z.string().trim().min(2, "Name too short").max(80),
@@ -42,29 +43,16 @@ const Auth = () => {
         return;
       }
 
-      // Check for hardcoded admin credentials
-      const adminEmail = "seroganyanemathaba@gmail.com";
-      const adminPassword = "Ponagalo#2026";
-
-      if (parsed.data.email === adminEmail && parsed.data.password === adminPassword) {
-        // Use the direct admin sign-in method
-        signInAsAdmin();
-        toast.success("Admin access granted!");
-        return;
-      }
-
-      // Fallback to regular admin check for other users
-      const { error } = await supabase.auth.signInWithPassword({
+      await signInAsAdmin({
         email: parsed.data.email,
         password: parsed.data.password,
       });
-      if (error) throw error;
 
-      // Check if user is admin
+      const { data: userData } = await supabase.auth.getUser();
       const { data: roleData } = await supabase
         .from('user_roles')
         .select('role')
-        .eq('user_id', (await supabase.auth.getUser()).data.user?.id)
+        .eq('user_id', userData.user?.id)
         .eq('role', 'admin')
         .maybeSingle();
 
@@ -76,6 +64,35 @@ const Auth = () => {
 
       toast.success("Admin access granted!");
       navigate("/admin");
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Something went wrong";
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    const email = form.email.trim();
+    if (!email) {
+      toast.error("Please enter your email address first.");
+      return;
+    }
+
+    if (!/\S+@\S+\.\S+/.test(email)) {
+      toast.error("Please enter a valid email address.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail({
+        email,
+        redirectTo: getAuthRedirectUrl("/auth"),
+      });
+
+      if (error) throw error;
+      toast.success(`Password reset email sent to ${email}`);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Something went wrong";
       toast.error(errorMessage);
@@ -98,7 +115,7 @@ const Auth = () => {
           email: parsed.data.email,
           password: parsed.data.password,
           options: {
-            emailRedirectTo: `${window.location.origin}/dashboard`,
+            emailRedirectTo: getAuthRedirectUrl("/dashboard"),
             data: { full_name: parsed.data.fullName, phone: parsed.data.phone },
           },
         });
@@ -163,6 +180,18 @@ const Auth = () => {
               <Label htmlFor="password">Password</Label>
               <Input id="password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
             </div>
+            {mode === "signin" && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                  onClick={handleForgotPassword}
+                  disabled={loading}
+                >
+                  Forgot password?
+                </button>
+              </div>
+            )}
             <Button type="submit" variant="hero" className="w-full" size="lg" disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               {mode === "signin" ? "Sign in" : "Create account"}
