@@ -1,11 +1,13 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
-import { LogOut, LayoutDashboard, Shield } from "lucide-react";
+import { LogOut, Shield } from "lucide-react";
 
 export const Navbar = () => {
   const { user, isAdmin, signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isHomePage = location.pathname === "/";
 
   const handleSignOut = async () => {
     await signOut();
@@ -20,28 +22,31 @@ export const Navbar = () => {
         </Link>
         <nav className="flex items-center gap-2">
           {user ? (
-            <>
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/dashboard">
-                  <LayoutDashboard className="h-4 w-4" /> Dashboard
+            isHomePage ? (
+              <Button variant="glass" size="sm" asChild>
+                <Link to="/auth">
+                  <LogOut className="h-4 w-4" /> Log in
                 </Link>
               </Button>
-              {isAdmin && (
+            ) : (
+              <>
+                {isAdmin && (
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link to="/admin">
+                      <Shield className="h-4 w-4" /> Admin
+                    </Link>
+                  </Button>
+                )}
+
                 <Button variant="ghost" size="sm" asChild>
-                  <Link to="/admin">
-                    <Shield className="h-4 w-4" /> Admin
-                  </Link>
+                  <Link to="/shop">Shop</Link>
                 </Button>
-              )}
 
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/shop">Shop</Link>
-              </Button>
-
-              <Button variant="glass" size="sm" onClick={handleSignOut}>
-                <LogOut className="h-4 w-4" /> Sign out
-              </Button>
-            </>
+                <Button variant="glass" size="sm" onClick={handleSignOut}>
+                  <LogOut className="h-4 w-4" /> Sign out
+                </Button>
+              </>
+            )
           ) : (
             <>
               <Button variant="ghost" size="sm" asChild>

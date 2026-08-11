@@ -2,17 +2,24 @@ import { products } from "@/lib/products";
 import ProductCard from "@/components/app/ProductCard";
 import { useCart } from "@/lib/cart";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import CheckoutDialog from "@/components/app/CheckoutDialog";
 import { Button } from "@/components/ui/button";
 
 const Shop = () => {
   const { items, addItem, removeItem, clear, total } = useCart();
   const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <div className="container py-10">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-display text-2xl">Shop</h1>
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")}>
+            ← User page
+          </Button>
+          <h1 className="font-display text-2xl">Shop</h1>
+        </div>
         <div className="flex gap-3 items-center">
           <div className="text-sm">Items: {items.length}</div>
           <div className="text-sm font-semibold">Total: R {total.toFixed(2)}</div>
@@ -22,7 +29,7 @@ const Shop = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
         {products.map((p) => (
           <ProductCard key={p.id} product={p} onAdd={() => addItem(p)} />
         ))}

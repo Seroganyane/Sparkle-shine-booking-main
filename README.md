@@ -51,4 +51,10 @@ Create a `.env.local` file with:
 ```
 VITE_SUPABASE_URL=your_supabase_url
 VITE_SUPABASE_PUBLISHABLE_KEY=your_supabase_key
+VITE_SITE_URL=https://your-public-domain.com
 ```
+
+`VITE_SITE_URL` is the public URL used by email-confirmation and password-reset
+links. Do not set it to `localhost` in a deployed environment. In Supabase,
+also add this URL (and `https://your-public-domain.com/**`) under **Authentication
+→ URL Configuration → Redirect URLs**, and set **Site URL** to the same domain.
