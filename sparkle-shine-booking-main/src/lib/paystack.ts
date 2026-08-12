@@ -27,6 +27,28 @@ export type PaystackGatewayResult = {
   message?: string;
 };
 
+export const verifyPaystackPayment = async ({
+  reference,
+  paymentType,
+  bookingId,
+  amount,
+  items,
+}: {
+  reference: string;
+  paymentType: "booking" | "order";
+  bookingId?: string;
+  amount?: number;
+  items?: unknown[];
+}) => {
+  const { supabase } = await import("@/integrations/supabase/client");
+  const { data, error } = await supabase.functions.invoke("verify-paystack-payment", {
+    body: { reference, paymentType, bookingId, amount, items },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data;
+};
+
 const defaultCurrency = "ZAR";
 
 export const openPaystackCheckout = async ({

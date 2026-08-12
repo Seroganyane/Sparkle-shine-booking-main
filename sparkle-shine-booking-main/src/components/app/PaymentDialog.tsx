@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Loader2, CreditCard, Lock } from "lucide-react";
-import { openPaystackCheckout } from "@/lib/paystack";
+import { openPaystackCheckout, verifyPaystackPayment } from "@/lib/paystack";
 
 export const PaymentDialog = ({
   open,
@@ -20,18 +20,6 @@ export const PaymentDialog = ({
   onPaid: () => void;
 }) => {
   const [loading, setLoading] = useState(false);
-
-  const getNextQueuePosition = async () => {
-    const { data } = await supabase
-      .from("bookings")
-      .select("queue_position")
-      .in("status", ["confirmed", "in_queue", "in_progress"])
-      .order("queue_position", { ascending: false })
-      .limit(1);
-
-    const maxPos = data?.[0]?.queue_position ?? 0;
-    return maxPos + 1;
-  };
 
   const pay = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,27 +55,19 @@ export const PaymentDialog = ({
       return;
     }
 
-    const nextQueuePosition = bookingData?.queue_position ?? (await getNextQueuePosition());
-
-    const { error } = await supabase
-      .from("bookings")
-      .update({ payment_status: "paid", status: "in_queue", queue_position: nextQueuePosition })
-      .eq("id", bookingId);
-
-    if (!error && bookingData?.user_id) {
-      await supabase.from("notifications").insert({
-        user_id: bookingData.user_id,
-        title: "Your car is ready to be washed",
-        message: "Your slot is paid and reserved. Your car is now in the queue and will be washed soon.",
-        type: "booking",
+    try {
+      await verifyPaystackPayment({
+        reference: paystack.reference!,
+        paymentType: "booking",
+        bookingId,
       });
+    } catch (error) {
+      setLoading(false);
+      toast.error(error instanceof Error ? error.message : "We could not verify your payment.");
+      return;
     }
 
     setLoading(false);
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
     toast.success("Payment successful!");
     onPaid();
     onOpenChange(false);
