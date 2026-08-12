@@ -1,12 +1,11 @@
 import { useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Loader2, CreditCard, Lock } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { CartItem } from "@/lib/cart";
-import { openPaystackCheckout } from "@/lib/paystack";
+import { openPaystackCheckout, verifyPaystackPayment } from "@/lib/paystack";
 
 export const CheckoutDialog = ({
   open,
@@ -51,20 +50,20 @@ export const CheckoutDialog = ({
       return;
     }
 
-    const { error } = await supabase.from("orders").insert([
-      {
-        user_id: user.id,
+    try {
+      await verifyPaystackPayment({
+        reference: paystack.reference!,
+        paymentType: "order",
+        amount,
         items: items.map((i) => ({ id: i.id, name: i.name, qty: i.quantity, price: i.price })),
-        total_amount: amount,
-        status: "paid",
-      },
-    ]);
-
-    setLoading(false);
-    if (error) {
-      toast.error(error.message);
+      });
+    } catch (error) {
+      setLoading(false);
+      toast.error(error instanceof Error ? error.message : "We could not verify your payment.");
       return;
     }
+
+    setLoading(false);
 
     toast.success("Purchase successful — thank you!");
     onPaid();
