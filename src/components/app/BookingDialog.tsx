@@ -122,26 +122,34 @@ export const BookingDialog = ({
         status: useFree ? "in_queue" : "pending",
         queue_position,
       });
-      if (error) throw error;
+      if (error) throw new Error(error.message);
       if (useFree) {
-        await supabase
+        const { error: profileError } = await supabase
           .from("profiles")
           .update({ free_washes: freeWashes - 1 })
           .eq("id", user.id);
+        if (profileError) throw new Error(profileError.message);
       }
-      await supabase.from("notifications").insert({
+      const { error: notificationError } = await supabase.from("notifications").insert({
         user_id: user.id,
         title: "Booking confirmed",
         message: `Your ${selected.name} is booked. We'll notify you when it's time!`,
         type: "booking",
       });
+      if (notificationError) throw new Error(notificationError.message);
       toast.success("Booking created!");
       setOpen(false);
       setForm({ car_make: "", car_model: "", car_plate: "", slot_number: 0, notes: "" });
       setUseFree(false);
       onBooked();
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "An error occurred";
+      console.error("Booking creation failed", err);
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : typeof err === "object" && err !== null && "message" in err && typeof (err as any).message === "string"
+          ? (err as any).message
+          : "An error occurred";
       toast.error(errorMessage);
     } finally {
       setLoading(false);
