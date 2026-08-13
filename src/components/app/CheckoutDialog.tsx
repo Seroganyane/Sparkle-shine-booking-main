@@ -65,7 +65,9 @@ export const CheckoutDialog = ({
 
     setLoading(false);
 
-    toast.success("Purchase successful — thank you!");
+    toast.success("You have successfully paid!", {
+      description: "Your purchase was received successfully. Thank you!",
+    });
     onPaid();
     onOpenChange(false);
   };

@@ -25,6 +25,7 @@ const Auth = () => {
   const navigate = useNavigate();
   const { user, isAdmin, signInAsAdmin } = useAuth();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [loginType, setLoginType] = useState<"customer" | "admin">("customer");
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ fullName: "", email: "", phone: "", password: "" });
 
@@ -86,8 +87,7 @@ const Auth = () => {
 
     setLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail({
-        email,
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: getAuthRedirectUrl("/auth"),
       });
 
@@ -155,74 +155,116 @@ const Auth = () => {
           <span className="bg-gradient-primary bg-clip-text text-transparent">AquaLux</span>
         </Link>
         <div className="rounded-2xl border border-border bg-card/80 p-8 backdrop-blur-xl shadow-card">
-          <h1 className="font-display text-2xl font-bold">{mode === "signin" ? "Welcome back" : "Create account"}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {mode === "signin" ? "Sign in to book your wash" : "Start earning rewards today"}
-          </p>
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-            {mode === "signup" && (
-              <>
-                <div>
-                  <Label htmlFor="name">Full name</Label>
-                  <Input id="name" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required />
-                </div>
-                <div>
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input id="phone" type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
-                </div>
-              </>
-            )}
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-            </div>
-            <div>
-              <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
-            </div>
-            {mode === "signin" && (
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-                  onClick={handleForgotPassword}
-                  disabled={loading}
-                >
-                  Forgot password?
-                </button>
-              </div>
-            )}
-            <Button type="submit" variant="hero" className="w-full" size="lg" disabled={loading}>
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {mode === "signin" ? "Sign in" : "Create account"}
-            </Button>
-          </form>
+          <div className="mb-6 grid grid-cols-3 gap-2 rounded-xl border border-border bg-muted/30 p-1">
+            <button
+              type="button"
+              onClick={() => {
+                setLoginType("customer");
+                setMode("signin");
+              }}
+              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${loginType === "customer" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              Customer
+            </button>
+            <Link
+              to="/admin-login"
+              className="rounded-lg px-3 py-2 text-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Admin
+            </Link>
+            <Link
+              to="/employee-login"
+              className="rounded-lg px-3 py-2 text-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Staff
+            </Link>
+          </div>
 
-          {mode === "signin" && (
-            <div className="mt-4 border-t border-border pt-4">
-              <p className="text-center text-sm text-muted-foreground mb-3">Admin Access</p>
-              <Button
+          {loginType === "customer" ? (
+            <>
+              <h1 className="font-display text-2xl font-bold">{mode === "signin" ? "Welcome back" : "Create account"}</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {mode === "signin" ? "Sign in to book your wash" : "Start earning rewards today"}
+              </p>
+              <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+                {mode === "signup" && (
+                  <>
+                    <div>
+                      <Label htmlFor="name">Full name</Label>
+                      <Input id="name" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required />
+                    </div>
+                    <div>
+                      <Label htmlFor="phone">Phone</Label>
+                      <Input id="phone" type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
+                    </div>
+                  </>
+                )}
+                <div>
+                  <Label htmlFor="email">Email</Label>
+                  <Input id="email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+                </div>
+                <div>
+                  <Label htmlFor="password">Password</Label>
+                  <Input id="password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
+                </div>
+                {mode === "signin" && (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                      onClick={handleForgotPassword}
+                      disabled={loading}
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                )}
+                <Button type="submit" variant="hero" className="w-full" size="lg" disabled={loading}>
+                  {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {mode === "signin" ? "Sign in" : "Create account"}
+                </Button>
+              </form>
+
+              <button
                 type="button"
-                variant="outline"
-                className="w-full"
-                size="lg"
-                onClick={handleAdminSignIn}
-                disabled={loading}
+                onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+                className="mt-6 w-full text-center text-sm text-muted-foreground hover:text-primary"
               >
-                {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                <Shield className="h-4 w-4 mr-2" />
-                Admin Sign In
-              </Button>
-            </div>
-          )}
+                {mode === "signin" ? "No account? Sign up" : "Have an account? Sign in"}
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="mb-4 flex items-center gap-2">
+                <div className="grid h-10 w-10 place-items-center rounded-lg bg-gradient-primary shadow-glow">
+                  <Shield className="h-5 w-5 text-primary-foreground" />
+                </div>
+                <div>
+                  <h1 className="font-display text-2xl font-bold">Admin login</h1>
+                  <p className="text-sm text-muted-foreground">Restricted access</p>
+                </div>
+              </div>
 
-          <button
-            type="button"
-            onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-            className="mt-6 w-full text-center text-sm text-muted-foreground hover:text-primary"
-          >
-            {mode === "signin" ? "No account? Sign up" : "Have an account? Sign in"}
-          </button>
+              <form onSubmit={handleAdminSignIn} className="mt-6 space-y-4">
+                <div>
+                  <Label htmlFor="admin-email">Admin email</Label>
+                  <Input id="admin-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+                </div>
+                <div>
+                  <Label htmlFor="admin-password">Password</Label>
+                  <Input id="admin-password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
+                </div>
+                <Button type="submit" variant="hero" className="w-full" size="lg" disabled={loading}>
+                  {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Admin Sign In
+                </Button>
+              </form>
+
+              <p className="mt-6 text-center text-sm text-muted-foreground">
+                Need a customer account? <button type="button" className="font-medium text-primary hover:underline" onClick={() => setLoginType("customer")}>Use customer login</button>
+              </p>
+            </>
+          )}
         </div>
       </div>
     </div>

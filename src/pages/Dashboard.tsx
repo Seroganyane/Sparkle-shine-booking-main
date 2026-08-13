@@ -86,9 +86,11 @@ const Dashboard = () => {
   const progressPct = (points / 10) * 100;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="relative min-h-screen bg-background">
+      <div className="absolute inset-0 bg-gradient-hero opacity-90" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,hsl(var(--primary)/0.15),transparent_60%)]" />
       <Navbar />
-      <main className="container py-8 md:py-12">
+      <main className="container relative py-8 md:py-12">
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="font-display text-3xl font-bold md:text-4xl">

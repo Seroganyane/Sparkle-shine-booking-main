@@ -6,9 +6,12 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import Auth from "./pages/Auth.tsx";
+import AdminLogin from "./pages/AdminLogin.tsx";
+import EmployeeLogin from "./pages/EmployeeLogin.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
 import Admin from "./pages/Admin.tsx";
 import Shop from "./pages/Shop.tsx";
+import Employee from "./pages/Employee.tsx";
 import { AuthProvider } from "./hooks/useAuth";
 import { ProtectedRoute } from "./components/app/ProtectedRoute";
 import { CartProvider } from "@/lib/cart";
@@ -26,9 +29,12 @@ const App = () => (
             <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/admin-login" element={<AdminLogin />} />
+            <Route path="/employee-login" element={<EmployeeLogin />} />
+            <Route path="/dashboard" element={<ProtectedRoute userOnly><Dashboard /></ProtectedRoute>} />
             <Route path="/shop" element={<Shop />} />
             <Route path="/admin" element={<ProtectedRoute adminOnly><Admin /></ProtectedRoute>} />
+            <Route path="/employee" element={<ProtectedRoute employeeOnly><Employee /></ProtectedRoute>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
@@ -40,3 +46,5 @@ const App = () => (
 );
 
 export default App;
+
+

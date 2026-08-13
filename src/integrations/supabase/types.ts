@@ -100,34 +100,170 @@ export type Database = {
       }
       profiles: {
         Row: {
+          assigned_slot_number: number | null
           created_at: string
           email: string | null
           free_washes: number
           full_name: string | null
           id: string
+          id_number: string | null
           phone: string | null
           reward_points: number
+          surname: string | null
           updated_at: string
         }
         Insert: {
+          assigned_slot_number?: number | null
           created_at?: string
           email?: string | null
           free_washes?: number
           full_name?: string | null
           id: string
+          id_number?: string | null
           phone?: string | null
           reward_points?: number
+          surname?: string | null
           updated_at?: string
         }
         Update: {
+          assigned_slot_number?: number | null
           created_at?: string
           email?: string | null
           free_washes?: number
           full_name?: string | null
           id?: string
+          id_number?: string | null
           phone?: string | null
           reward_points?: number
+          surname?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      orders: {
+        Row: {
+          created_at: string
+          id: string
+          items: Json
+          status: string
+          total_amount: number
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          items: Json
+          status: string
+          total_amount: number
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          items?: Json
+          status?: string
+          total_amount?: number
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      sent_notifications: {
+        Row: {
+          booking_id: string | null
+          channel: string
+          id: string
+          message: string | null
+          sent_at: string
+          title: string | null
+          type: string
+          user_id: string
+        }
+        Insert: {
+          booking_id?: string | null
+          channel: string
+          id?: string
+          message?: string | null
+          sent_at?: string
+          title?: string | null
+          type: string
+          user_id: string
+        }
+        Update: {
+          booking_id?: string | null
+          channel?: string
+          id?: string
+          message?: string | null
+          sent_at?: string
+          title?: string | null
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sent_notifications_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      employee_assignments: {
+        Row: {
+          assigned_at: string
+          assigned_by: string
+          booking_id: string
+          completed_at: string | null
+          employee_id: string
+          id: string
+          status: Database["public"]["Enums"]["employee_assignment_status"]
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by: string
+          booking_id: string
+          completed_at?: string | null
+          employee_id: string
+          id?: string
+          status?: Database["public"]["Enums"]["employee_assignment_status"]
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string
+          booking_id?: string
+          completed_at?: string | null
+          employee_id?: string
+          id?: string
+          status?: Database["public"]["Enums"]["employee_assignment_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "employee_assignments_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      employee_slots: {
+        Row: {
+          assigned_at: string
+          employee_id: string
+          id: string
+          slot_number: number
+        }
+        Insert: {
+          assigned_at?: string
+          employee_id: string
+          id?: string
+          slot_number: number
+        }
+        Update: {
+          assigned_at?: string
+          employee_id?: string
+          id?: string
+          slot_number?: number
         }
         Relationships: []
       }
@@ -157,6 +293,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      complete_employee_assignment: {
+        Args: { _assignment_id: string }
+        Returns: undefined
+      }
+      auto_assign_booking_slot: {
+        Args: { _booking_id: string }
+        Returns: number
+      }
+      auto_assign_employee_slot: {
+        Args: { _employee_id: string }
+        Returns: number
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -166,7 +314,8 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "user"
+      app_role: "admin" | "employee" | "user"
+      employee_assignment_status: "active" | "completed"
       booking_status:
         | "pending"
         | "confirmed"
@@ -303,7 +452,8 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "user"],
+      app_role: ["admin", "employee", "user"],
+      employee_assignment_status: ["active", "completed"],
       booking_status: [
         "pending",
         "confirmed",

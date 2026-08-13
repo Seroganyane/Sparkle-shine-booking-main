@@ -27,7 +27,7 @@ export const PaymentDialog = ({
 
     const { data: bookingData, error: fetchError } = await supabase
       .from("bookings")
-      .select("queue_position, user_id, user:profiles(email)")
+      .select("queue_position, user_id")
       .eq("id", bookingId)
       .maybeSingle();
 
@@ -37,7 +37,10 @@ export const PaymentDialog = ({
       return;
     }
 
-    const email = bookingData?.user?.email ?? "customer@example.com";
+    const { data: profileData } = bookingData?.user_id
+      ? await supabase.from("profiles").select("email").eq("id", bookingData.user_id).maybeSingle()
+      : { data: null };
+    const email = profileData?.email ?? "customer@example.com";
 
     const paystack = await openPaystackCheckout({
       email,
@@ -68,7 +71,9 @@ export const PaymentDialog = ({
     }
 
     setLoading(false);
-    toast.success("Payment successful!");
+    toast.success("You have successfully paid!", {
+      description: "Your payment has been received and your booking is confirmed.",
+    });
     onPaid();
     onOpenChange(false);
   };

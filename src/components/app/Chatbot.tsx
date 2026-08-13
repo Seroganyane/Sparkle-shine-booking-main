@@ -8,11 +8,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { getPackage, PACKAGES, PackageId } from "@/lib/packages";
 import { MessageSquare, Send, X, Mic, MicOff } from "lucide-react";
 
-const initialMessages = [
+type Message = { from: "bot" | "user"; text: string };
+
+const initialMessages: Message[] = [
   { from: "bot", text: "Hi there! I can help you book a car wash today. Just say 'book a wash' and I'll guide you." },
 ];
-
-type Message = { from: "bot" | "user"; text: string };
 
 type FlowStage = "idle" | "awaiting_slot" | "awaiting_car_make" | "awaiting_car_model" | "awaiting_license_plate" | "awaiting_package" | "awaiting_payment";
 
@@ -325,11 +325,11 @@ export const Chatbot = ({ freeWashes, onBooked }: { freeWashes: number; onBooked
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
       {chatOpen && (
-        <div className="w-[340px] rounded-3xl border border-border bg-slate-950/95 p-4 shadow-2xl backdrop-blur-xl text-white">
+        <div className="w-[340px] rounded-3xl border border-border bg-card/95 p-4 shadow-2xl backdrop-blur-xl">
           <div className="mb-3 flex items-center justify-between">
             <div>
               <div className="text-sm font-semibold">AquaLux Assistant</div>
-              <div className="text-xs text-slate-400">Ask me to book your next wash.</div>
+              <div className="text-xs text-muted-foreground">Ask me to book your next wash.</div>
             </div>
             <Button variant="ghost" size="icon" onClick={() => setChatOpen(false)}>
               <X className="h-4 w-4" />
@@ -339,7 +339,7 @@ export const Chatbot = ({ freeWashes, onBooked }: { freeWashes: number; onBooked
             {messages.map((message, index) => (
               <div
                 key={index}
-                className={`max-w-full rounded-2xl p-3 ${message.from === "bot" ? "bg-slate-800 text-slate-100" : "ml-auto bg-primary text-primary-foreground"}`}>
+                className={`max-w-full rounded-2xl p-3 ${message.from === "bot" ? "bg-secondary text-secondary-foreground" : "ml-auto bg-primary text-primary-foreground"}`}>
                 <p className="text-sm">{message.text}</p>
               </div>
             ))}
