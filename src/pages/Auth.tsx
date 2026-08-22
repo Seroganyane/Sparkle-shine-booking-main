@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Droplets, Loader2, Shield } from "lucide-react";
+import { Droplets, Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { getAuthRedirectUrl } from "@/lib/authRedirect";
 
@@ -23,55 +23,15 @@ const signInSchema = z.object({
 
 const Auth = () => {
   const navigate = useNavigate();
-  const { user, isAdmin, signInAsAdmin } = useAuth();
+  const { user, isAdmin, isEmployee, loading: authLoading } = useAuth();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [loginType, setLoginType] = useState<"customer" | "admin">("customer");
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ fullName: "", email: "", phone: "", password: "" });
 
   useEffect(() => {
-    if (!user) return;
-    navigate(isAdmin ? "/admin" : "/dashboard");
-  }, [user, isAdmin, navigate]);
-
-  const handleAdminSignIn = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const parsed = signInSchema.safeParse(form);
-      if (!parsed.success) {
-        toast.error(parsed.error.issues[0].message);
-        return;
-      }
-
-      await signInAsAdmin({
-        email: parsed.data.email,
-        password: parsed.data.password,
-      });
-
-      const { data: userData } = await supabase.auth.getUser();
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userData.user?.id)
-        .eq('role', 'admin')
-        .maybeSingle();
-
-      if (!roleData) {
-        toast.error("You don't have admin privileges");
-        await supabase.auth.signOut();
-        return;
-      }
-
-      toast.success("Admin access granted!");
-      navigate("/admin");
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Something went wrong";
-      toast.error(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  };
+    if (!user || authLoading) return;
+    navigate(isAdmin ? "/admin" : isEmployee ? "/employee" : "/dashboard", { replace: true });
+  }, [user, isAdmin, isEmployee, authLoading, navigate]);
 
   const handleForgotPassword = async () => {
     const email = form.email.trim();
@@ -128,13 +88,34 @@ const Auth = () => {
           toast.error(parsed.error.issues[0].message);
           return;
         }
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email: parsed.data.email,
           password: parsed.data.password,
         });
         if (error) throw error;
+
+        const { data: roles, error: roleError } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", data.user.id);
+        if (roleError) throw roleError;
+
+        const roleNames = new Set((roles ?? []).map(({ role }) => role));
+        const destination = roleNames.has("admin")
+          ? "/admin"
+          : roleNames.has("employee")
+            ? "/employee"
+            : "/dashboard";
+
+        if (destination === "/employee") {
+          const { error: slotError } = await supabase.rpc("auto_assign_employee_slot", {
+            _employee_id: data.user.id,
+          });
+          if (slotError) console.error("Failed to assign staff slot:", slotError);
+        }
+
         toast.success("Welcome back!");
-        navigate("/dashboard");
+        navigate(destination, { replace: true });
       }
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Something went wrong";
@@ -155,36 +136,10 @@ const Auth = () => {
           <span className="bg-gradient-primary bg-clip-text text-transparent">AquaLux</span>
         </Link>
         <div className="rounded-2xl border border-border bg-card/80 p-8 backdrop-blur-xl shadow-card">
-          <div className="mb-6 grid grid-cols-3 gap-2 rounded-xl border border-border bg-muted/30 p-1">
-            <button
-              type="button"
-              onClick={() => {
-                setLoginType("customer");
-                setMode("signin");
-              }}
-              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${loginType === "customer" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              Customer
-            </button>
-            <Link
-              to="/admin-login"
-              className="rounded-lg px-3 py-2 text-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Admin
-            </Link>
-            <Link
-              to="/employee-login"
-              className="rounded-lg px-3 py-2 text-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Staff
-            </Link>
-          </div>
-
-          {loginType === "customer" ? (
-            <>
+          <>
               <h1 className="font-display text-2xl font-bold">{mode === "signin" ? "Welcome back" : "Create account"}</h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                {mode === "signin" ? "Sign in to book your wash" : "Start earning rewards today"}
+                {mode === "signin" ? "Customer, staff and admin sign in here" : "Create a customer account"}
               </p>
               <form onSubmit={handleSubmit} className="mt-6 space-y-4">
                 {mode === "signup" && (
@@ -233,38 +188,6 @@ const Auth = () => {
                 {mode === "signin" ? "No account? Sign up" : "Have an account? Sign in"}
               </button>
             </>
-          ) : (
-            <>
-              <div className="mb-4 flex items-center gap-2">
-                <div className="grid h-10 w-10 place-items-center rounded-lg bg-gradient-primary shadow-glow">
-                  <Shield className="h-5 w-5 text-primary-foreground" />
-                </div>
-                <div>
-                  <h1 className="font-display text-2xl font-bold">Admin login</h1>
-                  <p className="text-sm text-muted-foreground">Restricted access</p>
-                </div>
-              </div>
-
-              <form onSubmit={handleAdminSignIn} className="mt-6 space-y-4">
-                <div>
-                  <Label htmlFor="admin-email">Admin email</Label>
-                  <Input id="admin-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-                </div>
-                <div>
-                  <Label htmlFor="admin-password">Password</Label>
-                  <Input id="admin-password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
-                </div>
-                <Button type="submit" variant="hero" className="w-full" size="lg" disabled={loading}>
-                  {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Admin Sign In
-                </Button>
-              </form>
-
-              <p className="mt-6 text-center text-sm text-muted-foreground">
-                Need a customer account? <button type="button" className="font-medium text-primary hover:underline" onClick={() => setLoginType("customer")}>Use customer login</button>
-              </p>
-            </>
-          )}
         </div>
       </div>
     </div>

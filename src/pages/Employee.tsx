@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Car, CheckCircle2, Clock3, Loader2, UserRound, Badge as BadgeIcon } from "lucide-react";
 import { Navbar } from "@/components/app/Navbar";
+import { AppSidebar } from "@/components/app/AppSidebar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
@@ -72,7 +73,8 @@ const Employee = () => {
       <div className="absolute inset-0 bg-gradient-hero opacity-90" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,hsl(var(--primary)/0.15),transparent_60%)]" />
       <Navbar />
-      <main className="container relative py-8 md:py-12">
+      <AppSidebar />
+      <main className="relative mx-auto max-w-7xl px-4 pb-8 pt-20 sm:px-6 md:pb-12 lg:ml-64 lg:max-w-none lg:px-8 lg:pt-12">
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="flex items-center gap-2 font-display text-3xl font-bold md:text-4xl"><UserRound className="h-8 w-8 text-primary" /> My wash slot</h1>

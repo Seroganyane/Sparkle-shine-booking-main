@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Navbar } from "@/components/app/Navbar";
+import { AppSidebar } from "@/components/app/AppSidebar";
 import { BookingDialog } from "@/components/app/BookingDialog";
 import { Chatbot } from "@/components/app/Chatbot";
 import { PaymentDialog } from "@/components/app/PaymentDialog";
@@ -90,7 +91,8 @@ const Dashboard = () => {
       <div className="absolute inset-0 bg-gradient-hero opacity-90" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,hsl(var(--primary)/0.15),transparent_60%)]" />
       <Navbar />
-      <main className="container relative py-8 md:py-12">
+      <AppSidebar />
+      <main className="relative mx-auto max-w-7xl px-4 pb-8 pt-20 sm:px-6 md:pb-12 lg:ml-64 lg:max-w-none lg:px-8 lg:pt-12">
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="font-display text-3xl font-bold md:text-4xl">

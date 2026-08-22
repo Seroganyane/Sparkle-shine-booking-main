@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Navbar } from "@/components/app/Navbar";
+import { AppSidebar } from "@/components/app/AppSidebar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -12,8 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { getPackage } from "@/lib/packages";
 import { toast } from "sonner";
 import { Database } from "@/integrations/supabase/types";
+import { getAuthRedirectUrl } from "@/lib/authRedirect";
 import {
-  ArrowDown, ArrowUp, Bell, Car, CheckCircle2, Gift, ListOrdered, Play, Send, Shield, Users, LucideIcon, ShoppingBag, UserPlus
+  ArrowDown, ArrowUp, Bell, Car, CheckCircle2, Gift, ListOrdered, Play, Send, Shield, Users, LucideIcon, UserPlus
 } from "lucide-react";
 
 type Booking = Database['public']['Tables']['bookings']['Row'] & { profile?: Database['public']['Tables']['profiles']['Row'] };
@@ -39,7 +41,18 @@ const statusColors: Record<string, string> = {
   cancelled: "bg-destructive/20 text-destructive border-destructive/30",
 };
 
-const Admin = () => {
+type AdminView = "overview" | "employees" | "orders" | "employee-slots" | "bookings" | "business-report";
+
+const viewTitles: Record<AdminView, string> = {
+  overview: "Admin Console",
+  employees: "Employees",
+  orders: "Customer Orders",
+  "employee-slots": "Employee Slots",
+  bookings: "Bookings",
+  "business-report": "Business Report",
+};
+
+const Admin = ({ view = "overview" }: { view?: AdminView }) => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const { user } = useAuth();
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -50,7 +63,6 @@ const Admin = () => {
   const [notifyOpen, setNotifyOpen] = useState<Booking | null>(null);
   const [rewardOpen, setRewardOpen] = useState(false);
   const [registerEmployeeOpen, setRegisterEmployeeOpen] = useState(false);
-  const [showProducts, setShowProducts] = useState(false);
   const [employeeSlots, setEmployeeSlots] = useState<Record<string, number>>({});
   const [slotDrafts, setSlotDrafts] = useState<Record<string, string>>({});
 
@@ -290,34 +302,37 @@ const Admin = () => {
       <div className="absolute inset-0 bg-gradient-hero opacity-90" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,hsl(var(--primary)/0.15),transparent_60%)]" />
       <Navbar />
-      <main className="container relative py-8 md:py-12">
+      <AppSidebar />
+      <main className="relative mx-auto max-w-7xl px-4 pb-8 pt-20 sm:px-6 md:pb-12 lg:ml-64 lg:max-w-none lg:px-8 lg:pt-12">
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="flex items-center gap-2 font-display text-3xl font-bold md:text-4xl">
-              <Shield className="h-8 w-8 text-primary" /> Admin Console
+              <Shield className="h-8 w-8 text-primary" /> {viewTitles[view]}
             </h1>
             <p className="text-muted-foreground">Manage bookings, queue & rewards</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {view === "employees" && <>
             <Dialog open={registerEmployeeOpen} onOpenChange={setRegisterEmployeeOpen}>
               <DialogTrigger asChild>
                 <Button variant="glass">
-                  <UserPlus className="h-4 w-4" /> Register staff
+                  <UserPlus className="h-4 w-4" /> Invite staff
                 </Button>
               </DialogTrigger>
               <RegisterEmployeeDialog onDone={() => { setRegisterEmployeeOpen(false); load(); }} />
             </Dialog>
-            <Button variant="glass" onClick={() => setShowProducts(!showProducts)}>
-              <ShoppingBag className="h-4 w-4" /> Products ({orders.length})
-            </Button>
             <Select onValueChange={makeEmployee}>
               <SelectTrigger className="w-48"><SelectValue placeholder="Add employee" /></SelectTrigger>
               <SelectContent>{profiles.filter((profile) => !employees.some((employee) => employee.id === profile.id)).map((profile) => <SelectItem key={profile.id} value={profile.id}>{profile.full_name || profile.email || "Unnamed account"}</SelectItem>)}</SelectContent>
             </Select>
+            </>}
+            {view === "overview" && (
             <Select onValueChange={makeAdmin}>
               <SelectTrigger className="w-48"><SelectValue placeholder="Grant admin" /></SelectTrigger>
               <SelectContent>{profiles.filter((profile) => !admins.some((admin) => admin.id === profile.id)).map((profile) => <SelectItem key={profile.id} value={profile.id}>{profile.full_name || profile.email || "Unnamed account"}</SelectItem>)}</SelectContent>
             </Select>
+            )}
+            {view === "bookings" && <>
             <Button variant="glass" onClick={autoQueue}>
               <ListOrdered className="h-4 w-4" /> Auto-order queue
             </Button>
@@ -329,11 +344,12 @@ const Admin = () => {
               </DialogTrigger>
               <GrantRewardDialog profiles={profiles} onDone={() => { setRewardOpen(false); load(); }} />
             </Dialog>
+            </>}
           </div>
         </div>
 
         {/* Stats */}
-        <div className="mb-8">
+        {view === "employee-slots" && <section className="mb-8">
           <h2 className="mb-4 font-display text-xl font-semibold">Employee slots</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {slotSummaries.map(({ slot, booking, busy }) => (
@@ -359,9 +375,9 @@ const Admin = () => {
               </div>
             ))}
           </div>
-        </div>
+        </section>}
 
-        <div className="mb-8 rounded-2xl border border-border bg-gradient-card p-5 shadow-card">
+        {view === "employees" && <section className="mb-8 rounded-2xl border border-border bg-gradient-card p-5 shadow-card">
           <div className="mb-4 flex items-center justify-between gap-2">
             <h2 className="font-display text-xl font-semibold">Staff roster</h2>
             <Badge variant="outline">{employees.length} signed up</Badge>
@@ -402,36 +418,25 @@ const Admin = () => {
               ))}
             </div>
           )}
-        </div>
+        </section>}
 
-        <div className="mb-8 grid gap-4 md:grid-cols-4">
-          <StatCard icon={Car} label="Busy slots" value={slotSummaries.filter((slot) => slot.busy).length} />
-          <StatCard icon={CheckCircle2} label="Completed today" value={bookings.filter((b) => b.status === "completed" && new Date(b.updated_at).toDateString() === new Date().toDateString()).length} />
-          <StatCard icon={Users} label="Total customers" value={profiles.length} />
-          <StatCard icon={Bell} label="Total bookings" value={bookings.length} />
-        </div>
+        {view === "business-report" && <section className="mb-8">
+          <h2 className="mb-4 font-display text-xl font-semibold">Business report</h2>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <StatCard icon={Car} label="Busy slots" value={slotSummaries.filter((slot) => slot.busy).length} />
+            <StatCard icon={CheckCircle2} label="Completed today" value={bookings.filter((b) => b.status === "completed" && new Date(b.updated_at).toDateString() === new Date().toDateString()).length} />
+            <StatCard icon={Users} label="Total customers" value={profiles.length} />
+            <StatCard icon={Bell} label="Total bookings" value={bookings.length} />
+            <StatCard icon={ArrowUp} label="Daily Profit" value={revenueFor(completedToday) - costFor(completedToday)} />
+            <StatCard icon={ArrowUp} label="Monthly Profit" value={revenueFor(completedThisMonth) - costFor(completedThisMonth)} />
+            <StatCard icon={ArrowUp} label="Yearly Profit" value={revenueFor(completedThisYear) - costFor(completedThisYear)} />
+            <StatCard icon={ArrowDown} label="Total Expenses" value={costFor(completedBookings)} />
+          </div>
+        </section>}
 
-        {/* Analytics */}
-        <div className="mb-8 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <StatCard icon={ArrowUp} label="Daily Profit" value={revenueFor(completedToday) - costFor(completedToday)} />
-          <StatCard icon={ArrowUp} label="Monthly Profit" value={revenueFor(completedThisMonth) - costFor(completedThisMonth)} />
-          <StatCard icon={ArrowUp} label="Yearly Profit" value={revenueFor(completedThisYear) - costFor(completedThisYear)} />
-          <StatCard icon={ArrowDown} label="Total Expenses" value={costFor(completedBookings)} />
-        </div>
-
-        {/* Filters */}
-        <div className="mb-4 flex flex-wrap gap-2">
-          {(["queue", "all", "completed"] as const).map((f) => (
-            <Button key={f} variant={filter === f ? "hero" : "glass"} size="sm" onClick={() => setFilter(f)}>
-              {f === "queue" ? "Active queue" : f === "all" ? "All bookings" : "Completed"}
-            </Button>
-          ))}
-        </div>
-
-        {/* Products Section */}
-        {showProducts && (
-          <div className="mb-8">
-            <h2 className="mb-4 font-display text-xl font-semibold">Product Orders</h2>
+        {/* Product orders */}
+        {view === "orders" && <section className="mb-8">
+            <h2 className="mb-4 font-display text-xl font-semibold">Customer orders</h2>
             {orders.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-border p-10 text-center text-muted-foreground">
                 No product orders yet.
@@ -466,17 +471,18 @@ const Admin = () => {
                 ))}
               </div>
             )}
-          </div>
-        )}
+        </section>}
 
-        {/* Filters */}
-        <div className="mb-4 flex flex-wrap gap-2">
-          {(["queue", "all", "completed"] as const).map((f) => (
-            <Button key={f} variant={filter === f ? "hero" : "glass"} size="sm" onClick={() => setFilter(f)}>
-              {f === "queue" ? "Active queue" : f === "all" ? "All bookings" : "Completed"}
-            </Button>
-          ))}
-        </div>
+        {view === "bookings" && <section>
+          {/* Filters */}
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <h2 className="mr-2 font-display text-xl font-semibold">Bookings</h2>
+            {(["queue", "all", "completed"] as const).map((f) => (
+              <Button key={f} variant={filter === f ? "hero" : "glass"} size="sm" onClick={() => setFilter(f)}>
+                {f === "queue" ? "Active queue" : f === "all" ? "All bookings" : "Completed"}
+              </Button>
+            ))}
+          </div>
 
         {/* Bookings table */}
         <div className="space-y-3">
@@ -559,6 +565,7 @@ const Admin = () => {
             })
           )}
         </div>
+        </section>}
       </main>
 
       {notifyOpen && <NotifyDialog booking={notifyOpen} onClose={() => setNotifyOpen(null)} />}
@@ -749,15 +756,11 @@ const RegisterEmployeeDialog = ({ onDone }: { onDone: () => void }) => {
       // `functions.invoke` includes the current Supabase session's bearer token.
       // A raw fetch to this endpoint is rejected by the Edge Function gateway.
       const { data: result, error } = await supabase.functions.invoke("admin-create-user", {
-        body: { email, firstName, surname, phone, idNumber },
+        body: { email, firstName, surname, phone, idNumber, registrationUrl: getAuthRedirectUrl("/staff-register") },
       });
       if (error) throw error;
-      if (!result?.userId) throw new Error(result?.error || "Server failed to create user");
-      if (result.assigned_slot) {
-        toast.success(`Employee registered! Assigned to Wash Bay #${result.assigned_slot}`);
-      } else {
-        toast.warning("Employee registered but no available slots");
-      }
+      if (!result?.invitationId) throw new Error(result?.error || "Server failed to create invitation");
+      toast.success(`Staff invitation sent to ${email}. One-time code: ${result.code}`, { duration: 10000 });
 
       setFirstName("");
       setSurname("");
@@ -775,7 +778,7 @@ const RegisterEmployeeDialog = ({ onDone }: { onDone: () => void }) => {
   return (
     <DialogContent>
       <DialogHeader>
-        <DialogTitle className="font-display">Register new staff member</DialogTitle>
+        <DialogTitle className="font-display">Invite new staff member</DialogTitle>
       </DialogHeader>
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
@@ -801,7 +804,7 @@ const RegisterEmployeeDialog = ({ onDone }: { onDone: () => void }) => {
           <Input value={idNumber} onChange={(e) => setIdNumber(e.target.value)} placeholder="0000000000000" />
         </div>
         <Button variant="hero" className="w-full" onClick={register} disabled={loading}>
-          <UserPlus className="h-4 w-4" /> Register staff
+          <UserPlus className="h-4 w-4" /> Send one-time invitation
         </Button>
       </div>
     </DialogContent>

@@ -33,11 +33,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const syncSession = async (nextSession: AppSession | null) => {
     setSession(nextSession);
     const nextUser = nextSession?.user ?? null;
-    setUser(nextUser);
-    if (!nextUser) { setIsAdmin(false); setIsEmployee(false); return; }
+    if (!nextUser) { setUser(null); setIsAdmin(false); setIsEmployee(false); return; }
     const [admin, employee] = await Promise.all([hasRole(nextUser.id, "admin"), hasRole(nextUser.id, "employee")]);
     setIsAdmin(admin);
     setIsEmployee(employee);
+    setUser(nextUser);
   };
 
   useEffect(() => {
@@ -49,7 +49,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setLoading(false);
     };
     void initAuth();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => { void syncSession(nextSession); setLoading(false); });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      void (async () => {
+        await syncSession(nextSession);
+        if (isMounted) setLoading(false);
+      })();
+    });
     return () => { isMounted = false; subscription.unsubscribe(); };
   }, []);
 

@@ -12,9 +12,9 @@ export const ProtectedRoute = ({ children, adminOnly = false, employeeOnly = fal
     );
   }
   if (!user) return <Navigate to="/auth" replace />;
-  if (userOnly && (isAdmin || isEmployee)) return <Navigate to="/shop" replace />;
-  if (adminOnly && !isAdmin) return <Navigate to="/shop" replace />;
-  if (employeeOnly && !isEmployee) return <Navigate to="/employee-login" replace />;
+  if (userOnly && isAdmin) return <Navigate to="/admin" replace />;
+  if (userOnly && isEmployee) return <Navigate to="/employee" replace />;
+  if (adminOnly && !isAdmin) return <Navigate to={isEmployee ? "/employee" : "/dashboard"} replace />;
+  if (employeeOnly && !isEmployee) return <Navigate to={isAdmin ? "/admin" : "/dashboard"} replace />;
   return <>{children}</>;
 };
-

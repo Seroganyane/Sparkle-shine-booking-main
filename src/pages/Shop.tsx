@@ -6,12 +6,14 @@ import { useNavigate } from "react-router-dom";
 import CheckoutDialog from "@/components/app/CheckoutDialog";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
+import { Navbar } from "@/components/app/Navbar";
+import { AppSidebar } from "@/components/app/AppSidebar";
 
 const Shop = () => {
   const { items, addItem, removeItem, clear, total } = useCart();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
-  const { isAdmin, isEmployee } = useAuth();
+  const { user, isAdmin, isEmployee } = useAuth();
 
   const getBackButton = () => {
     if (isAdmin) {
@@ -28,7 +30,9 @@ const Shop = () => {
     <div className="relative min-h-screen bg-background">
       <div className="absolute inset-0 bg-gradient-hero opacity-90" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,hsl(var(--primary)/0.15),transparent_60%)]" />
-      <div className="container relative py-10">
+      <Navbar />
+      <AppSidebar />
+      <div className={user ? "relative mx-auto max-w-7xl px-4 pb-10 pt-20 sm:px-6 lg:ml-64 lg:max-w-none lg:px-8 lg:pt-10" : "container relative py-10"}>
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => navigate(backButton.path)}>

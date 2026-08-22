@@ -5,61 +5,69 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+});
+
+const sha256 = async (value: string) => {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('');
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const authorization = req.headers.get('Authorization');
-    if (!authorization) {
-      return new Response(JSON.stringify({ error: 'Authorization is required' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    const adminClient = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
-    const callerClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
-      global: { headers: { Authorization: authorization } },
-      auth: { persistSession: false },
-    });
-    const { data: { user: caller }, error: callerError } = await callerClient.auth.getUser();
-    if (callerError || !caller) {
-      return new Response(JSON.stringify({ error: 'Invalid session' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
+    if (!authorization) return json({ error: 'Authorization is required.' }, 401);
+    const adminClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
+    const callerClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false } });
+    const { data: { user: caller } } = await callerClient.auth.getUser();
+    if (!caller) return json({ error: 'Invalid session.' }, 401);
     const { data: adminRole } = await adminClient.from('user_roles').select('user_id').eq('user_id', caller.id).eq('role', 'admin').maybeSingle();
-    if (!adminRole) {
-      return new Response(JSON.stringify({ error: 'Only admins can register employees' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (!adminRole) return json({ error: 'Only admins can invite staff.' }, 403);
+
+    const { email, firstName, surname, phone, idNumber, registrationUrl } = await req.json();
+    if (!email || !firstName || !surname || !phone || !idNumber || !registrationUrl) return json({ error: 'Missing invitation fields.' }, 400);
+    const normalizedEmail = String(email).trim().toLowerCase();
+    // A newly issued invitation invalidates every earlier code for this email.
+    await adminClient.from('staff_invitations').update({ used_at: new Date().toISOString() }).eq('email', normalizedEmail).is('used_at', null);
+
+    const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, '0');
+    const { data: invitation, error: invitationError } = await adminClient.from('staff_invitations').insert({
+      email: normalizedEmail,
+      code_hash: await sha256(code),
+      first_name: String(firstName).trim(), surname: String(surname).trim(), phone: String(phone).trim(), id_number: String(idNumber).trim(), invited_by: caller.id,
+    }).select('id, expires_at').single();
+    if (invitationError) return json({ error: invitationError.code === '23505' ? 'This email already has an active staff invitation.' : invitationError.message }, 400);
+
+    const redirect = new URL(registrationUrl);
+    redirect.searchParams.set('invitation', invitation.id);
+    redirect.searchParams.set('code', code);
+    const { data: usersData } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    const existingUser = usersData.users.find((user) => user.email?.toLowerCase() === normalizedEmail);
+    let invitedUserId: string;
+    if (existingUser) {
+      invitedUserId = existingUser.id;
+      const { error: recoveryError } = await adminClient.auth.resetPasswordForEmail(normalizedEmail, { redirectTo: redirect.toString() });
+      if (recoveryError) {
+        await adminClient.from('staff_invitations').delete().eq('id', invitation.id);
+        return json({ error: recoveryError.message }, 400);
+      }
+    } else {
+      const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(normalizedEmail, {
+        redirectTo: redirect.toString(), data: { staff_invitation_id: invitation.id, staff_invitation_code: code },
+      });
+      if (inviteError || !inviteData.user) {
+        await adminClient.from('staff_invitations').delete().eq('id', invitation.id);
+        return json({ error: inviteError?.message || 'Could not send the invitation email.' }, 400);
+      }
+      invitedUserId = inviteData.user.id;
     }
-
-    const { email, firstName, surname, phone, idNumber } = await req.json();
-    if (!email || !firstName || !surname || !phone || !idNumber) {
-      return new Response(JSON.stringify({ error: 'Missing fields' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    const password = Math.random().toString(36).slice(-12);
-    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({ email, password, email_confirm: true });
-    if (authError) return new Response(JSON.stringify({ error: authError.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    const userId = authData.user?.id;
-    if (!userId) return new Response(JSON.stringify({ error: 'Failed to create user' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-    const { error: profileError } = await adminClient.from('profiles').upsert({ id: userId, full_name: `${firstName} ${surname}`, surname, email, phone, id_number: idNumber }, { onConflict: 'id' });
-    if (profileError) return new Response(JSON.stringify({ error: profileError.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-    const { error: roleError } = await adminClient.from('user_roles').insert({ user_id: userId, role: 'employee' });
-    if (roleError) return new Response(JSON.stringify({ error: roleError.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-    const { data: assignedSlot, error: slotError } = await adminClient.rpc('auto_assign_employee_slot', { _employee_id: userId });
-    if (slotError) return new Response(JSON.stringify({ error: slotError.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-    const { error: slotProfileError } = await adminClient
-      .from('profiles')
-      .update({ assigned_slot_number: assignedSlot })
-      .eq('id', userId);
-    if (slotProfileError) return new Response(JSON.stringify({ error: slotProfileError.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-    await adminClient.from('notifications').insert({ user_id: userId, title: 'Welcome to AquaLux Staff Portal!', message: `Hi ${firstName}, your staff account has been created. Use this email (${email}) to login.`, type: 'admin_alert' });
-    return new Response(JSON.stringify({ userId, assigned_slot: assignedSlot }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-  } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message || String(err) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    await adminClient.from('staff_invitations').update({ invited_user_id: invitedUserId }).eq('id', invitation.id);
+    return json({ invitationId: invitation.id, code, expiresAt: invitation.expires_at });
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : 'Could not create staff invitation.' }, 500);
   }
 });

@@ -109,6 +109,7 @@ export type Database = {
           id_number: string | null
           phone: string | null
           reward_points: number
+          role: Database["public"]["Enums"]["app_role"]
           surname: string | null
           updated_at: string
         }
@@ -122,6 +123,7 @@ export type Database = {
           id_number?: string | null
           phone?: string | null
           reward_points?: number
+          role?: Database["public"]["Enums"]["app_role"]
           surname?: string | null
           updated_at?: string
         }
@@ -135,6 +137,7 @@ export type Database = {
           id_number?: string | null
           phone?: string | null
           reward_points?: number
+          role?: Database["public"]["Enums"]["app_role"]
           surname?: string | null
           updated_at?: string
         }
