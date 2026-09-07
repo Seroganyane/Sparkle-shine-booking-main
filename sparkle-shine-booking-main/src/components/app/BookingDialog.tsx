@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { PACKAGES, PackageId, getPackage } from "@/lib/packages";
 import { toast } from "sonner";
-import { Loader2, Plus, Gift } from "lucide-react";
+import { Loader2, Plus, Gift, Lock } from "lucide-react";
 
 const ALL_SLOTS = Array.from({ length: 10 }, (_, i) => i + 1);
 
@@ -93,10 +93,17 @@ export const BookingDialog = ({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user) {
+      toast.error("Please sign in to book a wash before confirming.");
+      return;
+    }
     const parsed = schema.safeParse(form);
     if (!parsed.success) {
       toast.error(parsed.error.issues[0].message);
+      return;
+    }
+    if (useFree && freeWashes <= 0) {
+      toast.error("You don\'t have any free washes left.");
       return;
     }
     if (!availableSlots.includes(parsed.data.slot_number)) {
@@ -132,13 +139,13 @@ export const BookingDialog = ({
       }
       const { error: notificationError } = await supabase.from("notifications").insert({
         user_id: user.id,
-        title: "Booking confirmed",
-        message: `Your ${selected.name} is booked. We'll notify you when it's time!`,
+        title: "Booking received",
+        message: `Your ${selected.name} request was received. Staff will notify you when it is accepted and you can bring your car.`,
         type: "booking",
       });
       if (notificationError) throw new Error(notificationError.message);
       toast.success("Booking created!");
-      setOpen(false);
+      setDialogOpen(false);
       setForm({ car_make: "", car_model: "", car_plate: "", slot_number: 0, notes: "" });
       setUseFree(false);
       onBooked();
@@ -233,7 +240,7 @@ export const BookingDialog = ({
                     disabled={taken}
                     className={`rounded-2xl border p-3 text-sm font-semibold transition-all ${
                       taken
-                        ? "cursor-not-allowed border-destructive/40 bg-destructive/20 text-destructive"
+                        ? "cursor-not-allowed border-destructive/40 bg-destructive/20 text-destructive opacity-60"
                         : selected
                         ? "border-primary bg-primary/20 text-primary"
                         : "border-border bg-card hover:border-primary/40"
@@ -247,18 +254,44 @@ export const BookingDialog = ({
                 );
               })}
             </div>
-            {availableSlots.length === 0 && (
+            {availableSlots.length === 0 ? (
               <p className="mt-2 text-sm text-destructive">No slots are currently available. Please try again later.</p>
-            )}
+            ) : !form.slot_number ? (
+              <p className="mt-2 text-sm text-muted-foreground">Please select a slot before confirming.</p>
+            ) : null}
           </div>
           <div>
             <Label htmlFor="notes">Notes (optional)</Label>
             <Textarea id="notes" maxLength={500} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </div>
-          <Button type="submit" variant="hero" className="w-full" size="lg" disabled={loading}>
-            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+          <Button
+            type="submit"
+            variant="hero"
+            className="w-full"
+            size="lg"
+            disabled={loading || !form.slot_number || availableSlots.length === 0}
+            title={
+              loading
+                ? "Processing your booking..."
+                : availableSlots.length === 0
+                ? "No available slots right now"
+                : !form.slot_number
+                ? "Select a slot to enable booking"
+                : undefined
+            }
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : !form.slot_number || availableSlots.length === 0 ? (
+              <Lock className="mr-2 h-4 w-4" />
+            ) : null}
             {useFree ? "Confirm free booking" : `Confirm — R ${getPackage(pkg).price}`}
           </Button>
+          {availableSlots.length === 0 ? (
+            <p className="mt-2 text-sm text-destructive">No slots are currently available. Please try again later.</p>
+          ) : !form.slot_number ? (
+            <p className="mt-2 text-sm text-muted-foreground">Please select an available slot before confirming your booking.</p>
+          ) : null}
         </form>
       </DialogContent>
     </Dialog>

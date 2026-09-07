@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Droplets, Loader2, Shield } from "lucide-react";
+import { Droplets, Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { getAuthRedirectUrl } from "@/lib/authRedirect";
 
@@ -23,54 +23,15 @@ const signInSchema = z.object({
 
 const Auth = () => {
   const navigate = useNavigate();
-  const { user, isAdmin, signInAsAdmin } = useAuth();
+  const { user, isAdmin, isEmployee, loading: authLoading } = useAuth();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ fullName: "", email: "", phone: "", password: "" });
 
   useEffect(() => {
-    if (!user) return;
-    navigate(isAdmin ? "/admin" : "/dashboard");
-  }, [user, isAdmin, navigate]);
-
-  const handleAdminSignIn = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const parsed = signInSchema.safeParse(form);
-      if (!parsed.success) {
-        toast.error(parsed.error.issues[0].message);
-        return;
-      }
-
-      await signInAsAdmin({
-        email: parsed.data.email,
-        password: parsed.data.password,
-      });
-
-      const { data: userData } = await supabase.auth.getUser();
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userData.user?.id)
-        .eq('role', 'admin')
-        .maybeSingle();
-
-      if (!roleData) {
-        toast.error("You don't have admin privileges");
-        await supabase.auth.signOut();
-        return;
-      }
-
-      toast.success("Admin access granted!");
-      navigate("/admin");
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Something went wrong";
-      toast.error(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  };
+    if (!user || authLoading) return;
+    navigate(isAdmin ? "/admin" : isEmployee ? "/employee" : "/dashboard", { replace: true });
+  }, [user, isAdmin, isEmployee, authLoading, navigate]);
 
   const handleForgotPassword = async () => {
     const email = form.email.trim();
@@ -86,8 +47,7 @@ const Auth = () => {
 
     setLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail({
-        email,
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: getAuthRedirectUrl("/auth"),
       });
 
@@ -128,13 +88,34 @@ const Auth = () => {
           toast.error(parsed.error.issues[0].message);
           return;
         }
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email: parsed.data.email,
           password: parsed.data.password,
         });
         if (error) throw error;
+
+        const { data: roles, error: roleError } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", data.user.id);
+        if (roleError) throw roleError;
+
+        const roleNames = new Set((roles ?? []).map(({ role }) => role));
+        const destination = roleNames.has("admin")
+          ? "/admin"
+          : roleNames.has("employee")
+            ? "/employee"
+            : "/dashboard";
+
+        if (destination === "/employee") {
+          const { error: slotError } = await supabase.rpc("auto_assign_employee_slot", {
+            _employee_id: data.user.id,
+          });
+          if (slotError) console.error("Failed to assign staff slot:", slotError);
+        }
+
         toast.success("Welcome back!");
-        navigate("/dashboard");
+        navigate(destination, { replace: true });
       }
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Something went wrong";
@@ -155,74 +136,58 @@ const Auth = () => {
           <span className="bg-gradient-primary bg-clip-text text-transparent">AquaLux</span>
         </Link>
         <div className="rounded-2xl border border-border bg-card/80 p-8 backdrop-blur-xl shadow-card">
-          <h1 className="font-display text-2xl font-bold">{mode === "signin" ? "Welcome back" : "Create account"}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {mode === "signin" ? "Sign in to book your wash" : "Start earning rewards today"}
-          </p>
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-            {mode === "signup" && (
-              <>
+          <>
+              <h1 className="font-display text-2xl font-bold">{mode === "signin" ? "Welcome back" : "Create account"}</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {mode === "signin" ? "Customer, staff and admin sign in here" : "Create a customer account"}
+              </p>
+              <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+                {mode === "signup" && (
+                  <>
+                    <div>
+                      <Label htmlFor="name">Full name</Label>
+                      <Input id="name" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required />
+                    </div>
+                    <div>
+                      <Label htmlFor="phone">Phone</Label>
+                      <Input id="phone" type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
+                    </div>
+                  </>
+                )}
                 <div>
-                  <Label htmlFor="name">Full name</Label>
-                  <Input id="name" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required />
+                  <Label htmlFor="email">Email</Label>
+                  <Input id="email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
                 </div>
                 <div>
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input id="phone" type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
+                  <Label htmlFor="password">Password</Label>
+                  <Input id="password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
                 </div>
-              </>
-            )}
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-            </div>
-            <div>
-              <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
-            </div>
-            {mode === "signin" && (
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-                  onClick={handleForgotPassword}
-                  disabled={loading}
-                >
-                  Forgot password?
-                </button>
-              </div>
-            )}
-            <Button type="submit" variant="hero" className="w-full" size="lg" disabled={loading}>
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {mode === "signin" ? "Sign in" : "Create account"}
-            </Button>
-          </form>
+                {mode === "signin" && (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                      onClick={handleForgotPassword}
+                      disabled={loading}
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                )}
+                <Button type="submit" variant="hero" className="w-full" size="lg" disabled={loading}>
+                  {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {mode === "signin" ? "Sign in" : "Create account"}
+                </Button>
+              </form>
 
-          {mode === "signin" && (
-            <div className="mt-4 border-t border-border pt-4">
-              <p className="text-center text-sm text-muted-foreground mb-3">Admin Access</p>
-              <Button
+              <button
                 type="button"
-                variant="outline"
-                className="w-full"
-                size="lg"
-                onClick={handleAdminSignIn}
-                disabled={loading}
+                onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+                className="mt-6 w-full text-center text-sm text-muted-foreground hover:text-primary"
               >
-                {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                <Shield className="h-4 w-4 mr-2" />
-                Admin Sign In
-              </Button>
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-            className="mt-6 w-full text-center text-sm text-muted-foreground hover:text-primary"
-          >
-            {mode === "signin" ? "No account? Sign up" : "Have an account? Sign in"}
-          </button>
+                {mode === "signin" ? "No account? Sign up" : "Have an account? Sign in"}
+              </button>
+            </>
         </div>
       </div>
     </div>

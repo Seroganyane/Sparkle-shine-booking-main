@@ -83,7 +83,7 @@ const Index = () => {
 
       {/* Packages */}
       <section id="packages" className="container py-20">
-        <div className="mx-auto mb-12 max-w-2xl rounded-3xl border border-border bg-slate-800/90 p-10 text-center">
+        <div className="mx-auto mb-12 max-w-2xl rounded-3xl border border-border bg-card/90 p-10 text-center shadow-card">
           <h2 className="font-display text-4xl font-bold md:text-5xl text-foreground">Pick your package</h2>
           <p className="mt-3 text-foreground">Three tiers. All powered by the same obsession with detail.</p>
         </div>
@@ -91,7 +91,7 @@ const Index = () => {
           {PACKAGES.map((p, i) => (
             <div
               key={p.id}
-              className={`relative rounded-2xl border bg-slate-800/90 p-8 transition-all hover:-translate-y-1 hover:shadow-glow ${
+              className={`relative rounded-2xl border bg-card/90 p-8 transition-all hover:-translate-y-1 hover:shadow-glow ${
                 i === 1 ? "border-primary/60 shadow-glow" : "border-border"
               }`}
             >

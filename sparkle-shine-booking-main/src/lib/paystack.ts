@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import { getFunctionErrorMessage } from "@/lib/function-error";
 
 declare global {
   interface Window {
@@ -44,7 +45,7 @@ export const verifyPaystackPayment = async ({
   const { data, error } = await supabase.functions.invoke("verify-paystack-payment", {
     body: { reference, paymentType, bookingId, amount, items },
   });
-  if (error) throw error;
+  if (error) throw new Error(await getFunctionErrorMessage(error, "Payment verification failed."));
   if (data?.error) throw new Error(data.error);
   return data;
 };
