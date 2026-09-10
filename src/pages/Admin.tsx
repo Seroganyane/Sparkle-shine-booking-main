@@ -101,15 +101,20 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
 
   useEffect(() => {
     load();
+    if (!user) return;
     const ch = supabase
       .channel("admin-updates")
       .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, load)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, (payload) => {
+        const notification = payload.new as Database["public"]["Tables"]["notifications"]["Row"];
+        toast.success(notification.title, { description: notification.message });
+      })
       .subscribe();
     return () => {
       supabase.removeChannel(ch);
     };
-  }, [load]);
+  }, [load, user]);
 
   // queue: pending/confirmed/in_queue/in_progress, ordered by queue_position then scheduled_at
   const queueBookings = bookings

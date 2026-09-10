@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Car, CheckCircle2, Clock3, Loader2, UserRound, Badge as BadgeIcon } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Camera, Car, CheckCircle2, Clock3, Loader2, RotateCcw, ScanLine, ShieldCheck, ThumbsUp, UserRound, Badge as BadgeIcon } from "lucide-react";
 import { Navbar } from "@/components/app/Navbar";
 import { AppSidebar } from "@/components/app/AppSidebar";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,14 @@ const Employee = () => {
   const [permanentSlot, setPermanentSlot] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [finishing, setFinishing] = useState(false);
+  const [accepting, setAccepting] = useState(false);
+  const [vehiclePhoto, setVehiclePhoto] = useState<string | null>(null);
+  const [vehicleVerified, setVehicleVerified] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanMessage, setScanMessage] = useState<string | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const booking = assignment?.booking;
+  const isVehicleVerified = vehicleVerified || Boolean(assignment?.plate_verified_at);
 
   const loadSlot = useCallback(async () => {
     if (!user) return;
@@ -54,6 +62,79 @@ const Employee = () => {
     return () => { void supabase.removeChannel(channel); };
   }, [load, loadSlot, user?.id]);
 
+  useEffect(() => {
+    setVehiclePhoto((currentPhoto) => {
+      if (currentPhoto) URL.revokeObjectURL(currentPhoto);
+      return null;
+    });
+    setVehicleVerified(false);
+    setScanMessage(null);
+  }, [booking?.id]);
+
+  useEffect(() => () => {
+    if (vehiclePhoto) URL.revokeObjectURL(vehiclePhoto);
+  }, [vehiclePhoto]);
+
+  const captureVehicle = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const photo = event.target.files?.[0];
+    if (!photo) return;
+    setVehiclePhoto((currentPhoto) => {
+      if (currentPhoto) URL.revokeObjectURL(currentPhoto);
+      return URL.createObjectURL(photo);
+    });
+    setVehicleVerified(false);
+    setScanMessage(null);
+    event.target.value = "";
+    if (!assignment) return;
+
+    setScanning(true);
+    try {
+      const { recognize } = await import("tesseract.js");
+      const result = await recognize(photo, "eng");
+      const expectedPlate = booking?.car_plate.replace(/[^a-z0-9]/gi, "").toUpperCase() ?? "";
+      const scannedLines = result.data.text
+        .split(/\r?\n/)
+        .map((line) => line.replace(/[^a-z0-9]/gi, "").toUpperCase())
+        .filter(Boolean);
+      const scannedPlate = scannedLines.find((line) => line === expectedPlate);
+
+      if (!scannedPlate) {
+        setScanMessage(`The scanned plate does not match ${booking?.car_plate}. Do not start the wash.`);
+        toast.error("Wrong vehicle or plate not clearly visible", { description: `Expected registration: ${booking?.car_plate}` });
+        return;
+      }
+
+      const { error } = await supabase.rpc("verify_employee_vehicle", {
+        _assignment_id: assignment.id,
+        _scanned_plate: scannedPlate,
+      });
+      if (error) throw error;
+      setVehicleVerified(true);
+      setScanMessage(`Correct vehicle verified: ${booking?.car_plate}. The admin has been notified.`);
+      toast.success("Correct vehicle verified", { description: "The administrator has been notified automatically." });
+      await load();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The number plate could not be scanned.";
+      setScanMessage("The plate could not be read. Retake a clear, close photo of the registration plate.");
+      toast.error("Plate scan failed", { description: message });
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const acceptBooking = async () => {
+    if (!assignment) return;
+    setAccepting(true);
+    const { error } = await supabase.rpc("accept_employee_booking", { _assignment_id: assignment.id });
+    setAccepting(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Booking accepted. The customer has been notified to bring their vehicle.");
+    await load();
+  };
+
   const finishWash = async () => {
     if (!assignment) return;
     setFinishing(true);
@@ -67,7 +148,6 @@ const Employee = () => {
     setAssignment(null);
   };
 
-  const booking = assignment?.booking;
   return (
     <div className="relative min-h-screen bg-background">
       <div className="absolute inset-0 bg-gradient-hero opacity-90" />
@@ -113,11 +193,57 @@ const Employee = () => {
               <div><p className="text-sm text-muted-foreground">Wash bay</p><p className="mt-1 font-display text-xl font-semibold">Slot #{booking.slot_number ?? "�"}</p></div>
               <div><p className="text-sm text-muted-foreground">Customer notes</p><p className="mt-1 font-medium">{booking.notes || "No special instructions"}</p></div>
             </div>
-            <Button className="mt-6 w-full sm:w-auto" variant="hero" size="lg" onClick={finishWash} disabled={finishing}>
+            {!assignment.accepted_at ? (
+              <div className="mt-6">
+                <Button className="w-full sm:w-auto" variant="hero" size="lg" onClick={acceptBooking} disabled={accepting}>
+                  {accepting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ThumbsUp className="h-4 w-4" />}
+                  Accept booking & notify customer
+                </Button>
+                <p className="mt-3 text-sm text-muted-foreground">Accept the booking before scanning the arriving vehicle.</p>
+              </div>
+            ) : <div className="mt-6 rounded-2xl border border-primary/25 bg-background/50 p-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="mt-0.5 h-6 w-6 shrink-0 text-primary" />
+                <div>
+                  <h3 className="font-display text-lg font-semibold">Verify the vehicle before washing</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">Take a close, clear photo of the registration plate. It will be scanned and checked automatically against <span className="font-mono font-semibold text-foreground">{booking.car_plate}</span>.</p>
+                </div>
+              </div>
+
+              <input
+                ref={cameraInputRef}
+                className="sr-only"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={captureVehicle}
+                aria-label="Take a photo of the assigned vehicle"
+              />
+
+              {vehiclePhoto && (
+                <img src={vehiclePhoto} alt="Vehicle verification preview" className="mt-4 max-h-72 w-full rounded-xl border border-border object-cover" />
+              )}
+
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                {!isVehicleVerified && <Button type="button" variant={vehiclePhoto ? "outline" : "hero"} onClick={() => cameraInputRef.current?.click()} disabled={scanning}>
+                  {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : vehiclePhoto ? <RotateCcw className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
+                  {scanning ? "Scanning number plate..." : vehiclePhoto ? "Retake plate photo" : "Scan number plate"}
+                </Button>}
+              </div>
+
+              {scanMessage && (
+                <p role="status" className={`mt-4 flex items-center gap-2 text-sm font-medium ${isVehicleVerified ? "text-success" : "text-destructive"}`}>
+                  {isVehicleVerified ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <ScanLine className="h-4 w-4 shrink-0" />} {scanMessage}
+                </p>
+              )}
+              {isVehicleVerified && !scanMessage && <p role="status" className="mt-4 flex items-center gap-2 text-sm font-medium text-success"><ShieldCheck className="h-4 w-4" /> Correct customer vehicle verified</p>}
+            </div>}
+
+            <Button className="mt-6 w-full sm:w-auto" variant="hero" size="lg" onClick={finishWash} disabled={finishing || !isVehicleVerified}>
               {finishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               Finish wash & alert supervisor
             </Button>
-            <p className="mt-3 text-sm text-muted-foreground">This marks the wash complete and lets your supervisor know that you can receive another car.</p>
+            <p className="mt-3 text-sm text-muted-foreground">{isVehicleVerified ? "This marks the wash complete and lets your supervisor know that you can receive another car." : "Verify the assigned vehicle with the camera before completing the wash."}</p>
           </section>
         ) : (
           <section className="max-w-3xl rounded-3xl border border-dashed border-border bg-gradient-card p-10 text-center shadow-card">

@@ -213,30 +213,39 @@ export type Database = {
       }
       employee_assignments: {
         Row: {
+          accepted_at: string | null
           assigned_at: string
           assigned_by: string
           booking_id: string
           completed_at: string | null
           employee_id: string
           id: string
+          plate_verified_at: string | null
+          scanned_plate: string | null
           status: Database["public"]["Enums"]["employee_assignment_status"]
         }
         Insert: {
+          accepted_at?: string | null
           assigned_at?: string
           assigned_by: string
           booking_id: string
           completed_at?: string | null
           employee_id: string
           id?: string
+          plate_verified_at?: string | null
+          scanned_plate?: string | null
           status?: Database["public"]["Enums"]["employee_assignment_status"]
         }
         Update: {
+          accepted_at?: string | null
           assigned_at?: string
           assigned_by?: string
           booking_id?: string
           completed_at?: string | null
           employee_id?: string
           id?: string
+          plate_verified_at?: string | null
+          scanned_plate?: string | null
           status?: Database["public"]["Enums"]["employee_assignment_status"]
         }
         Relationships: [
@@ -298,6 +307,14 @@ export type Database = {
     Functions: {
       complete_employee_assignment: {
         Args: { _assignment_id: string }
+        Returns: undefined
+      }
+      accept_employee_booking: {
+        Args: { _assignment_id: string }
+        Returns: undefined
+      }
+      verify_employee_vehicle: {
+        Args: { _assignment_id: string; _scanned_plate: string }
         Returns: undefined
       }
       auto_assign_booking_slot: {
