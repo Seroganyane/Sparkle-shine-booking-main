@@ -60,6 +60,11 @@ const Auth = () => {
   }, [form.fullName, form.username, form.email, form.phone]);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    if (params.get("type") === "recovery" || new URLSearchParams(window.location.search).get("type") === "recovery") {
+      navigate(`/reset-password${window.location.search}${window.location.hash}`, { replace: true });
+      return;
+    }
     if (!user || authLoading) return;
     navigate(isAdmin ? "/admin" : isEmployee ? "/employee" : "/dashboard", { replace: true });
   }, [user, isAdmin, isEmployee, authLoading, navigate]);
@@ -83,7 +88,7 @@ const Auth = () => {
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: getAuthRedirectUrl("/auth"),
+        redirectTo: getAuthRedirectUrl("/reset-password"),
       });
 
       if (error) throw error;
