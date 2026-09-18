@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
+import { showFieldError } from "@/lib/fieldError";
 
 const StaffRegistration = () => {
   const navigate = useNavigate();
@@ -24,9 +25,9 @@ const StaffRegistration = () => {
   const register = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!invitationId) return toast.error("This invitation link is incomplete.");
-    if (!/^\d{6}$/.test(code)) return toast.error("Enter the six-digit invitation code.");
-    if (password.length < 6) return toast.error("Password must contain at least six characters.");
-    if (password !== confirmPassword) return toast.error("Passwords do not match.");
+    if (!/^\d{6}$/.test(code)) return showFieldError("Enter the six-digit invitation code.", "invite-code");
+    if (password.length < 6) return showFieldError("Password must contain at least six characters.", "staff-password");
+    if (password !== confirmPassword) return showFieldError("Passwords do not match.", "staff-password-confirm");
 
     setLoading(true);
     try {
@@ -40,17 +41,17 @@ const StaffRegistration = () => {
       toast.success(data.assignedSlot ? `Staff account activated. Your station is Wash Bay #${data.assignedSlot}.` : "Staff account activated.");
       navigate("/employee", { replace: true });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Registration failed.");
+      showFieldError(error instanceof Error ? error.message : "Registration failed.", "invite-code");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="relative grid min-h-screen place-items-center overflow-hidden bg-gradient-hero p-4">
+    <div className="relative grid min-h-screen place-items-center bg-gradient-hero p-4">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,hsl(var(--primary)/0.2),transparent_60%)]" />
       <div className="relative w-full max-w-md">
-        <Link to="/" className="mb-8 flex items-center justify-center gap-2 font-display text-2xl font-bold">
+        <Link to="/" aria-label="AquaLux home" className="mb-8 flex items-center justify-center gap-2 font-display text-2xl font-bold">
           <span className="grid h-10 w-10 place-items-center rounded-lg bg-gradient-primary shadow-glow"><Droplets className="h-5 w-5 text-primary-foreground" /></span>
           <span className="bg-gradient-primary bg-clip-text text-transparent">AquaLux</span>
         </Link>

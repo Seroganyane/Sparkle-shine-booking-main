@@ -21,7 +21,7 @@ const Shop = () => {
     } else if (isEmployee) {
       return { label: "← My work", path: "/employee" };
     }
-    return { label: "← User page", path: "/dashboard" };
+    return user ? { label: "← Dashboard", path: "/dashboard" } : { label: "← Home", path: "/" };
   };
 
   const backButton = getBackButton();
@@ -33,14 +33,14 @@ const Shop = () => {
       <Navbar />
       <AppSidebar />
       <div className={user ? "relative mx-auto max-w-7xl px-4 pb-10 pt-20 sm:px-6 lg:ml-64 lg:max-w-none lg:px-8 lg:pt-10" : "container relative py-10"}>
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => navigate(backButton.path)}>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <Button variant="ghost" onClick={() => navigate(backButton.path)}>
             {backButton.label}
           </Button>
           <h1 className="font-display text-2xl">Shop</h1>
         </div>
-        <div className="flex gap-3 items-center">
+        <div className="flex flex-wrap gap-3 items-center">
           <div className="text-sm">Items: {items.length}</div>
           <div className="text-sm font-semibold">Total: R {total.toFixed(2)}</div>
           <Button variant="ghost" onClick={() => setOpen(true)} disabled={items.length === 0}>
@@ -65,18 +65,18 @@ const Shop = () => {
               <div key={i.id} className="flex items-center justify-between rounded-xl border border-border bg-card/80 p-3">
                 <div>
                   <div className="font-medium">{i.name}</div>
-                  <div className="text-sm text-muted-foreground">Qty: {i.quantity} — R {i.price.toFixed(2)}</div>
+                  <div className="text-sm text-muted-foreground">Quantity: {i.quantity} — R {i.price.toFixed(2)}</div>
                 </div>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="ghost" onClick={() => removeItem(i.id)}>
+                  <Button variant="ghost" onClick={() => removeItem(i.id)}>
                     Remove
                   </Button>
                 </div>
               </div>
             ))}
             <div className="flex items-center justify-between">
-              <Button variant="ghost" onClick={clear} size="sm">
-                Clear
+              <Button variant="ghost" onClick={clear}>
+                Clear cart
               </Button>
               <div className="font-semibold">R {total.toFixed(2)}</div>
             </div>

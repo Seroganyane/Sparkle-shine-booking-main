@@ -171,21 +171,21 @@ const Employee = () => {
               <BadgeIcon className="h-6 w-6 text-primary" />
               <div>
                 <p className="text-sm font-medium text-primary">Your permanent station</p>
-                <p className="font-display text-2xl font-bold text-primary">Wash Bay #{permanentSlot}</p>
+                <p className="font-display text-2xl font-bold text-primary">Wash bay #{permanentSlot}</p>
               </div>
             </div>
           </div>
         )}
 
         {loading ? (
-          <div className="grid min-h-64 place-items-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+          <div role="status" aria-live="polite" className="grid min-h-64 place-items-center gap-3 text-sm text-muted-foreground"><Loader2 className="h-8 w-8 animate-spin text-primary" />Loading your assignment...</div>
         ) : booking ? (
           <section className="max-w-3xl rounded-3xl border border-primary/30 bg-gradient-card p-6 shadow-card md:p-8">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <p className="text-sm font-medium text-primary">Assigned vehicle</p>
                 <h2 className="mt-2 flex items-center gap-2 font-display text-3xl font-bold"><Car className="h-7 w-7 text-primary" /> {booking.car_make} {booking.car_model}</h2>
-                <p className="mt-2 font-mono text-lg text-muted-foreground">{booking.car_plate}</p>
+                <p className="mt-2 text-lg text-muted-foreground">{booking.car_plate}</p>
               </div>
               <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary">{getPackage(booking.package).name}</Badge>
             </div>
@@ -206,7 +206,7 @@ const Employee = () => {
                 <ShieldCheck className="mt-0.5 h-6 w-6 shrink-0 text-primary" />
                 <div>
                   <h3 className="font-display text-lg font-semibold">Verify the vehicle before washing</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">Take a close, clear photo of the registration plate. It will be scanned and checked automatically against <span className="font-mono font-semibold text-foreground">{booking.car_plate}</span>.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Take a close, clear photo of the registration plate. It will be scanned and checked automatically against <span className="font-semibold text-foreground">{booking.car_plate}</span>.</p>
                 </div>
               </div>
 

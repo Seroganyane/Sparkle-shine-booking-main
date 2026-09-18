@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Navbar } from "@/components/app/Navbar";
 import { AppSidebar } from "@/components/app/AppSidebar";
-import { BookingDialog } from "@/components/app/BookingDialog";
+import { BookingDialog, type BookingPrefill } from "@/components/app/BookingDialog";
 import { Chatbot } from "@/components/app/Chatbot";
 import { PaymentDialog } from "@/components/app/PaymentDialog";
 import { Button } from "@/components/ui/button";
@@ -13,10 +13,13 @@ import { getPackage } from "@/lib/packages";
 import { fetchWeatherPrediction } from "@/lib/weather";
 import { Bell, Car, Clock, Gift, Sparkles, CreditCard, CheckCircle2, XCircle, ListOrdered } from "lucide-react";
 import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { showFieldError } from "@/lib/fieldError";
 import { Database } from "@/integrations/supabase/types";
 
 type Booking = Database['public']['Tables']['bookings']['Row'];
-type Profile = { reward_points: number; free_washes: number; full_name: string | null };
+type Profile = { reward_points: number; free_washes: number; full_name: string | null; username: string | null };
 type Notif = { id: string; title: string; message: string; type: string; read: boolean; created_at: string };
 
 const statusColors: Record<string, string> = {
@@ -31,9 +34,14 @@ const statusColors: Record<string, string> = {
 const Dashboard = () => {
   const { user } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [username, setUsername] = useState("");
+  const [savingUsername, setSavingUsername] = useState(false);
+  const [loadingScreen, setLoadingScreen] = useState(true);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [payTarget, setPayTarget] = useState<{ id: string; amount: number } | null>(null);
+  const [bookingOpen, setBookingOpen] = useState(false);
+  const [bookingDraft, setBookingDraft] = useState<BookingPrefill | null>(null);
 
   const { data: weather, isLoading: weatherLoading, isError: weatherError } = useQuery({
     queryKey: ["weather-prediction"],
@@ -45,13 +53,15 @@ const Dashboard = () => {
   const load = useCallback(async () => {
     if (!user) return;
     const [{ data: p }, { data: b }, { data: n }] = await Promise.all([
-      supabase.from("profiles").select("reward_points, free_washes, full_name").eq("id", user.id).maybeSingle(),
+      supabase.from("profiles").select("reward_points, free_washes, full_name, username").eq("id", user.id).maybeSingle(),
       supabase.from("bookings").select("*").eq("user_id", user.id).order("scheduled_at", { ascending: false }),
       supabase.from("notifications").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(20),
     ]);
     setProfile(p as Profile);
+    setUsername(p?.username ?? "");
     setBookings(b || []);
     setNotifs((n as Notif[]) || []);
+    setLoadingScreen(false);
   }, [user]);
 
   useEffect(() => {
@@ -86,6 +96,25 @@ const Dashboard = () => {
   const free = profile?.free_washes ?? 0;
   const progressPct = (points / 10) * 100;
 
+  const saveUsername = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!user) return;
+    const value = username.trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,30}$/.test(value)) {
+      showFieldError("Use 3–30 lowercase letters, numbers, or underscores.", "account-username");
+      return;
+    }
+    setSavingUsername(true);
+    const { error } = await supabase.from("profiles").update({ username: value }).eq("id", user.id);
+    setSavingUsername(false);
+    if (error) {
+      showFieldError(error.code === "23505" ? "This username is already in use." : error.message, "account-username");
+      return;
+    }
+    setProfile((current) => current ? { ...current, username: value } : current);
+    toast.success("Username saved. You can use it to sign in.");
+  };
+
   return (
     <div className="relative min-h-screen bg-background">
       <div className="absolute inset-0 bg-gradient-hero opacity-90" />
@@ -93,6 +122,7 @@ const Dashboard = () => {
       <Navbar />
       <AppSidebar />
       <main className="relative mx-auto max-w-7xl px-4 pb-8 pt-20 sm:px-6 md:pb-12 lg:ml-64 lg:max-w-none lg:px-8 lg:pt-12">
+        {loadingScreen && <p role="status" aria-live="polite" className="mb-4 text-sm text-muted-foreground">Loading your dashboard...</p>}
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="font-display text-3xl font-bold md:text-4xl">
@@ -100,8 +130,20 @@ const Dashboard = () => {
             </h1>
             <p className="text-muted-foreground">Manage your bookings and rewards</p>
           </div>
-          <BookingDialog freeWashes={free} onBooked={load} />
+          <BookingDialog freeWashes={free} onBooked={load} open={bookingOpen} onOpenChange={setBookingOpen} initialDraft={bookingDraft} />
         </div>
+
+        <section className="mb-8 rounded-2xl border border-border bg-card/80 p-4 shadow-card sm:p-6" aria-labelledby="account-heading">
+          <h2 id="account-heading" className="text-xl font-semibold">Your account</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Sign in with your email address or a username you choose.</p>
+          <form onSubmit={saveUsername} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="min-w-0 flex-1">
+              <Label htmlFor="account-username">Username</Label>
+              <Input id="account-username" autoComplete="username" maxLength={30} value={username} onChange={(event) => setUsername(event.target.value.toLowerCase())} />
+            </div>
+            <Button type="submit" disabled={savingUsername || username.trim() === (profile?.username ?? "")}>Save username</Button>
+          </form>
+        </section>
 
         {/* Stats */}
         <div className="mb-8 grid gap-4 md:grid-cols-3">
@@ -187,10 +229,10 @@ const Dashboard = () => {
                             )}
                           </div>
                           <p className="mt-1 text-sm text-muted-foreground">
-                            {b.car_make} {b.car_model} · <span className="font-mono">{b.car_plate}</span>
+                            {b.car_make} {b.car_model} · <span>{b.car_plate}</span>
                           </p>
                           <p className="mt-1 text-sm">
-                            Slot #{b.slot_number ?? "N/A"}
+                            Slot {b.slot_number ? `#${b.slot_number}` : "not assigned"}
                           </p>
                           {b.payment_status === "unpaid" && b.status !== "cancelled" && (
                             <p className="mt-3 rounded-2xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
@@ -270,7 +312,7 @@ const Dashboard = () => {
         />
       )}
 
-      <Chatbot freeWashes={free} onBooked={load} />
+      <Chatbot onBookingReady={(draft) => { setBookingDraft(draft); setBookingOpen(true); }} />
     </div>
   );
 };

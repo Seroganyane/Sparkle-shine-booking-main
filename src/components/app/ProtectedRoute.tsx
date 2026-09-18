@@ -7,7 +7,10 @@ export const ProtectedRoute = ({ children, adminOnly = false, employeeOnly = fal
   if (loading) {
     return (
       <div className="grid min-h-screen place-items-center">
-        <div className="h-12 w-12 animate-pulse-glow rounded-full bg-gradient-primary" />
+        <div role="status" aria-live="polite" className="grid justify-items-center gap-4 text-sm text-muted-foreground">
+          <div className="h-12 w-12 animate-pulse-glow rounded-full bg-gradient-primary" />
+          Loading your account...
+        </div>
       </div>
     );
   }

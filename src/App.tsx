@@ -14,15 +14,19 @@ import StaffRegistration from "./pages/StaffRegistration.tsx";
 import { AuthProvider } from "./hooks/useAuth";
 import { ProtectedRoute } from "./components/app/ProtectedRoute";
 import { CartProvider } from "@/lib/cart";
+import { ControlHints } from "@/components/app/ControlHints";
+import { RouteFocus } from "@/components/app/RouteFocus";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
+      <ControlHints />
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <RouteFocus />
         <AuthProvider>
           <CartProvider>
             <Routes>

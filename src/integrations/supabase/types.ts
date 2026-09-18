@@ -112,6 +112,7 @@ export type Database = {
           role: Database["public"]["Enums"]["app_role"]
           surname: string | null
           updated_at: string
+          username: string | null
         }
         Insert: {
           assigned_slot_number?: number | null
@@ -126,6 +127,7 @@ export type Database = {
           role?: Database["public"]["Enums"]["app_role"]
           surname?: string | null
           updated_at?: string
+          username?: string | null
         }
         Update: {
           assigned_slot_number?: number | null
@@ -140,6 +142,7 @@ export type Database = {
           role?: Database["public"]["Enums"]["app_role"]
           surname?: string | null
           updated_at?: string
+          username?: string | null
         }
         Relationships: []
       }
@@ -305,6 +308,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      username_is_available: {
+        Args: { candidate: string }
+        Returns: boolean
+      }
       complete_employee_assignment: {
         Args: { _assignment_id: string }
         Returns: undefined

@@ -10,8 +10,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { PACKAGES, PackageId, getPackage } from "@/lib/packages";
 import { toast } from "sonner";
 import { Loader2, Plus, Gift, Lock } from "lucide-react";
+import { showFieldError } from "@/lib/fieldError";
 
 const ALL_SLOTS = Array.from({ length: 10 }, (_, i) => i + 1);
+
+export type BookingPrefill = {
+  car_make: string;
+  car_model: string;
+  car_plate: string;
+  slot_number: number;
+  package: PackageId;
+};
 
 const schema = z.object({
   car_make: z.string().trim().min(1).max(50),
@@ -26,11 +35,13 @@ export const BookingDialog = ({
   onBooked,
   open: openProp,
   onOpenChange: onOpenChangeProp,
+  initialDraft,
 }: {
   freeWashes: number;
   onBooked: () => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  initialDraft?: BookingPrefill | null;
 }) => {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
@@ -49,6 +60,18 @@ export const BookingDialog = ({
   const [useFree, setUseFree] = useState(false);
   const [availableSlots, setAvailableSlots] = useState<number[]>(ALL_SLOTS);
   const [form, setForm] = useState({ car_make: "", car_model: "", car_plate: "", slot_number: 0, notes: "" });
+
+  useEffect(() => {
+    if (!initialDraft) return;
+    setPkg(initialDraft.package);
+    setForm({
+      car_make: initialDraft.car_make,
+      car_model: initialDraft.car_model,
+      car_plate: initialDraft.car_plate,
+      slot_number: initialDraft.slot_number,
+      notes: "",
+    });
+  }, [initialDraft]);
 
   const loadSlots = async () => {
     const result = await supabase
@@ -99,15 +122,16 @@ export const BookingDialog = ({
     }
     const parsed = schema.safeParse(form);
     if (!parsed.success) {
-      toast.error(parsed.error.issues[0].message);
+      const fieldIds: Record<string, string> = { car_make: "make", car_model: "model", car_plate: "plate", slot_number: "slot-choice", notes: "notes" };
+      showFieldError(parsed.error.issues[0].message, fieldIds[String(parsed.error.issues[0].path[0])] || "make");
       return;
     }
     if (useFree && freeWashes <= 0) {
-      toast.error("You don\'t have any free washes left.");
+      toast.error("You don't have any free washes left.");
       return;
     }
     if (!availableSlots.includes(parsed.data.slot_number)) {
-      toast.error("Selected slot is no longer available. Please choose another slot.");
+      showFieldError("Selected slot is no longer available. Please choose another slot.", "slot-choice");
       loadSlots();
       return;
     }
@@ -175,8 +199,8 @@ export const BookingDialog = ({
           <DialogTitle className="font-display text-2xl">Book a car wash</DialogTitle>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4">
-          <div>
-            <Label>Wash package</Label>
+          <fieldset className="rounded-xl border border-border p-3">
+            <legend className="px-1 text-sm font-medium">Wash package</legend>
             <div className="mt-2 grid grid-cols-3 gap-2">
               {PACKAGES.map((p) => (
                 <button
@@ -193,7 +217,7 @@ export const BookingDialog = ({
                 </button>
               ))}
             </div>
-          </div>
+          </fieldset>
 
           {freeWashes > 0 && (
             <button
@@ -226,9 +250,9 @@ export const BookingDialog = ({
             <Label htmlFor="plate">License plate</Label>
             <Input id="plate" placeholder="ABC 123" value={form.car_plate} onChange={(e) => setForm({ ...form, car_plate: e.target.value })} required />
           </div>
-          <div>
-            <Label>Choose your slot</Label>
-            <div className="mt-2 grid grid-cols-5 gap-2">
+          <fieldset className="rounded-xl border border-border p-3">
+            <legend className="px-1 text-sm font-medium">Choose your slot</legend>
+            <div id="slot-choice" tabIndex={-1} className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
               {ALL_SLOTS.map((slot) => {
                 const taken = !availableSlots.includes(slot);
                 const selected = form.slot_number === slot;
@@ -259,7 +283,7 @@ export const BookingDialog = ({
             ) : !form.slot_number ? (
               <p className="mt-2 text-sm text-muted-foreground">Please select a slot before confirming.</p>
             ) : null}
-          </div>
+          </fieldset>
           <div>
             <Label htmlFor="notes">Notes (optional)</Label>
             <Textarea id="notes" maxLength={500} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />

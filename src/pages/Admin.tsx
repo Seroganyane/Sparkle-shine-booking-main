@@ -44,16 +44,17 @@ const statusColors: Record<string, string> = {
 type AdminView = "overview" | "employees" | "orders" | "employee-slots" | "bookings" | "business-report";
 
 const viewTitles: Record<AdminView, string> = {
-  overview: "Admin Console",
+  overview: "Admin console",
   employees: "Employees",
-  orders: "Customer Orders",
-  "employee-slots": "Employee Slots",
+  orders: "Customer orders",
+  "employee-slots": "Employee slots",
   bookings: "Bookings",
-  "business-report": "Business Report",
+  "business-report": "Business report",
 };
 
 const Admin = ({ view = "overview" }: { view?: AdminView }) => {
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loadingScreen, setLoadingScreen] = useState(true);
   const { user } = useAuth();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [employees, setEmployees] = useState<Profile[]>([]);
@@ -97,6 +98,7 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
       profile: map.get(order.user_id)
     }));
     setOrders(ordersWithProfiles);
+    setLoadingScreen(false);
   }, []);
 
   useEffect(() => {
@@ -309,6 +311,7 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
       <Navbar />
       <AppSidebar />
       <main className="relative mx-auto max-w-7xl px-4 pb-8 pt-20 sm:px-6 md:pb-12 lg:ml-64 lg:max-w-none lg:px-8 lg:pt-12">
+        {loadingScreen && <p role="status" aria-live="polite" className="mb-4 text-sm text-muted-foreground">Loading {viewTitles[view].toLowerCase()}...</p>}
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="flex items-center gap-2 font-display text-3xl font-bold md:text-4xl">
@@ -365,7 +368,7 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
                     <div className="font-display text-xl font-bold">Slot {slot}</div>
                   </div>
                   <Badge variant="outline" className={busy ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-success/30 bg-success/10 text-success"}>
-                    {busy ? `Reserved Â· ${booking?.status.replace("_", " ")}` : "Available"}
+                    {busy ? `Reserved · ${booking?.status.replace("_", " ")}` : "Available"}
                   </Badge>
                 </div>
                 {booking ? (
@@ -463,7 +466,7 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
                         <div className="mt-3 space-y-1">
                           {Array.isArray(order.items) && order.items.map((item: any, idx: number) => (
                             <p key={idx} className="text-sm text-muted-foreground">
-                              â€¢ {item.name} (Qty: {item.quantity}) - R {Number(item.price).toFixed(2)}
+                              • {item.name} (Quantity: {item.quantity}) - R {Number(item.price).toFixed(2)}
                             </p>
                           ))}
                         </div>
@@ -480,7 +483,7 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
 
         {view === "bookings" && <section>
           {/* Filters */}
-          <div className="mb-4 flex flex-wrap items-center gap-2">
+          <div role="group" aria-label="Booking filters" className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card/70 p-3">
             <h2 className="mr-2 font-display text-xl font-semibold">Bookings</h2>
             {(["queue", "all", "completed"] as const).map((f) => (
               <Button key={f} variant={filter === f ? "hero" : "glass"} size="sm" onClick={() => setFilter(f)}>
@@ -514,9 +517,9 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
                           <Badge variant="outline">{pkg.name}</Badge>
                         </div>
                         <p className="mt-1 text-sm text-muted-foreground">
-                          {b.car_make} {b.car_model} Â· <span className="font-mono">{b.car_plate}</span> Â· {b.profile?.phone}
+                          {b.car_make} {b.car_model} · <span>{b.car_plate}</span> · {b.profile?.phone}
                         </p>
-                        <p className="mt-1 text-sm">Slot #{b.slot_number ?? "N/A"} Â· R {Number(b.amount).toFixed(2)} Â· {b.payment_status}</p>
+                        <p className="mt-1 text-sm">Slot {b.slot_number ? `#${b.slot_number}` : "not assigned"} · R {Number(b.amount).toFixed(2)} · {b.payment_status}</p>
                         {b.notes && <p className="mt-1 text-xs italic text-muted-foreground">"{b.notes}"</p>}
                       </div>
                     </div>
@@ -590,7 +593,7 @@ const StatCard = ({ icon: Icon, label, value }: { icon: LucideIcon; label: strin
 
 const NotifyDialog = ({ booking, onClose }: { booking: Booking; onClose: () => void }) => {
   const [title, setTitle] = useState("It's time! ðŸš—");
-  const [message, setMessage] = useState(`Hi ${booking.profile?.full_name?.split(" ")[0] || ""}, please bring your ${booking.car_make} ${booking.car_model} now â€” your wash bay is ready.`);
+  const [message, setMessage] = useState(`Hi ${booking.profile?.full_name?.split(" ")[0] || ""}, please bring your ${booking.car_make} ${booking.car_model} now — your wash bay is ready.`);
   const [notifyVia, setNotifyVia] = useState<"app" | "email" | "sms">("app");
   const [loading, setLoading] = useState(false);
 
@@ -658,7 +661,7 @@ const NotifyDialog = ({ booking, onClose }: { booking: Booking; onClose: () => v
               <SelectContent>
                 <SelectItem value="app">ðŸ“± In-app notification</SelectItem>
                 <SelectItem value="email">ðŸ“§ Email to {booking.profile?.email}</SelectItem>
-                <SelectItem value="sms">ðŸ’¬ SMS to {booking.profile?.phone}</SelectItem>
+                <SelectItem value="sms">Text message to {booking.profile?.phone}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -805,7 +808,7 @@ const RegisterEmployeeDialog = ({ onDone }: { onDone: () => void }) => {
           <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+27..." />
         </div>
         <div>
-          <Label>ID Number</Label>
+          <Label>Identity number</Label>
           <Input value={idNumber} onChange={(e) => setIdNumber(e.target.value)} placeholder="0000000000000" />
         </div>
         <Button variant="hero" className="w-full" onClick={register} disabled={loading}>
