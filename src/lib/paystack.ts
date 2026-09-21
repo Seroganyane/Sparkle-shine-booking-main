@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import { edgeFunctionError } from "@/lib/edgeFunctionError";
 
 declare global {
   interface Window {
@@ -44,7 +45,7 @@ export const verifyPaystackPayment = async ({
   const { data, error } = await supabase.functions.invoke("verify-paystack-payment", {
     body: { reference, paymentType, bookingId, amount, items },
   });
-  if (error) throw error;
+  if (error) throw await edgeFunctionError(error);
   if (data?.error) throw new Error(data.error);
   return data;
 };

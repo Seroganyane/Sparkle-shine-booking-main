@@ -15,6 +15,7 @@ import { getPackage } from "@/lib/packages";
 import { toast } from "sonner";
 import { Database } from "@/integrations/supabase/types";
 import { getAuthRedirectUrl } from "@/lib/authRedirect";
+import { ID_NUMBER_LENGTH, idNumberError, normalizeIdNumber } from "@/lib/idNumber";
 import {
   ArrowDown, ArrowUp, Bell, Car, CheckCircle2, Gift, ListOrdered, Play, Send, Shield, Users, LucideIcon, UserPlus
 } from "lucide-react";
@@ -724,12 +725,23 @@ const RegisterEmployeeDialog = ({ onDone }: { onDone: () => void }) => {
       return;
     }
 
+    const idError = idNumberError(idNumber);
+    if (idError) {
+      toast.error(idError);
+      document.getElementById("staff-id-number")?.focus();
+      return;
+    }
+
     setLoading(true);
     try {
       // `functions.invoke` includes the current Supabase session's bearer token.
       // A raw fetch to this endpoint is rejected by the Edge Function gateway.
       const { data: result, error } = await supabase.functions.invoke("admin-create-user", {
-        body: { email, firstName, surname, phone, idNumber, registrationUrl: getAuthRedirectUrl("/staff-register") },
+        body: {
+          email, firstName, surname, phone,
+          idNumber: normalizeIdNumber(idNumber),
+          registrationUrl: getAuthRedirectUrl("/staff-register"),
+        },
       });
       if (error) throw new Error(await getFunctionErrorMessage(error, "Registration failed"));
       if (!result?.invitationId) throw new Error(result?.error || "Server failed to create invitation");
@@ -773,8 +785,18 @@ const RegisterEmployeeDialog = ({ onDone }: { onDone: () => void }) => {
           <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+27..." />
         </div>
         <div>
-          <Label>ID Number</Label>
-          <Input value={idNumber} onChange={(e) => setIdNumber(e.target.value)} placeholder="0000000000000" />
+          <Label htmlFor="staff-id-number">ID Number</Label>
+          <Input
+            id="staff-id-number"
+            inputMode="numeric"
+            maxLength={ID_NUMBER_LENGTH}
+            value={idNumber}
+            onChange={(e) => setIdNumber(e.target.value.replace(/\D/g, ""))}
+            placeholder="0000000000000"
+          />
+          {idNumber.length === ID_NUMBER_LENGTH && idNumberError(idNumber) && (
+            <p className="mt-1 text-sm text-destructive">{idNumberError(idNumber)}</p>
+          )}
         </div>
         <Button variant="hero" className="w-full" onClick={register} disabled={loading}>
           <UserPlus className="h-4 w-4" /> Send one-time invitation

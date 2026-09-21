@@ -6,10 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { PACKAGES, PackageId, getPackage } from "@/lib/packages";
 import { toast } from "sonner";
-import { Loader2, Plus, Gift, Lock } from "lucide-react";
+import { Loader2, Plus, Gift, Lock, Check } from "lucide-react";
 import { showFieldError } from "@/lib/fieldError";
 
 const ALL_SLOTS = Array.from({ length: 10 }, (_, i) => i + 1);
@@ -203,18 +204,36 @@ export const BookingDialog = ({
             <legend className="px-1 text-sm font-medium">Wash package</legend>
             <div className="mt-2 grid grid-cols-3 gap-2">
               {PACKAGES.map((p) => (
-                <button
-                  type="button"
-                  key={p.id}
-                  onClick={() => setPkg(p.id)}
-                  className={`rounded-xl border p-3 text-left transition-all ${
-                    pkg === p.id ? "border-primary bg-primary/20 shadow-glow" : "border-border hover:border-primary/40"
-                  }`}
-                >
-                  <div className="text-xs text-muted-foreground">{p.duration}</div>
-                  <div className="font-semibold">{p.name.split(" ")[0]}</div>
-                  <div className="font-display font-bold text-primary">R {p.price}</div>
-                </button>
+                <HoverCard key={p.id} openDelay={100} closeDelay={50}>
+                  <HoverCardTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => setPkg(p.id)}
+                      className={`rounded-xl border p-3 text-left transition-all ${
+                        pkg === p.id ? "border-primary bg-primary/20 shadow-glow" : "border-border hover:border-primary/40"
+                      }`}
+                    >
+                      <div className="text-xs text-muted-foreground">{p.duration}</div>
+                      <div className="font-semibold">{p.name.split(" ")[0]}</div>
+                      <div className="font-display font-bold text-primary">R {p.price}</div>
+                    </button>
+                  </HoverCardTrigger>
+                  <HoverCardContent side="top" className="w-60">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <div className="font-display font-semibold">{p.name}</div>
+                      <div className="font-display font-bold text-primary">R {p.price}</div>
+                    </div>
+                    <div className="mb-2 text-xs text-muted-foreground">About {p.duration}</div>
+                    <ul className="space-y-1 text-sm">
+                      {p.features.map((feature) => (
+                        <li key={feature} className="flex items-start gap-2">
+                          <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+                          <span>{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </HoverCardContent>
+                </HoverCard>
               ))}
             </div>
           </fieldset>

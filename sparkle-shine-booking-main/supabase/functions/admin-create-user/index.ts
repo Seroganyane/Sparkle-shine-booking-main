@@ -10,6 +10,29 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
   headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 });
 
+// Mirrors src/lib/idNumber.ts — a South African ID is 13 digits: YYMMDD, gender
+// sequence, citizenship digit, and a Luhn check digit. Never trust the client copy.
+const idNumberError = (value: string) => {
+  const id = String(value).replace(/\s/g, '');
+  if (!/^\d{13}$/.test(id)) return 'Identity number must be exactly 13 digits.';
+  const month = Number(id.slice(2, 4));
+  const day = Number(id.slice(4, 6));
+  const realDate = month >= 1 && month <= 12 && day >= 1 && day <= 31 && [1900, 2000].some((century) => {
+    const date = new Date(Date.UTC(century + Number(id.slice(0, 2)), month - 1, day));
+    return date.getUTCMonth() === month - 1 && date.getUTCDate() === day && date.getTime() <= Date.now();
+  });
+  if (!realDate) return 'The first six digits of the identity number must be a date of birth (YYMMDD).';
+  if (id[10] !== '0' && id[10] !== '1') return 'The eleventh digit of the identity number must be 0 or 1.';
+  let sum = 0;
+  for (let offset = 0; offset < id.length; offset++) {
+    let digit = Number(id[id.length - 1 - offset]);
+    if (offset % 2 === 1) digit = digit * 2 > 9 ? digit * 2 - 9 : digit * 2;
+    sum += digit;
+  }
+  if (sum % 10 !== 0) return 'This identity number is not valid — please check it for typos.';
+  return null;
+};
+
 const sha256 = async (value: string) => {
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -30,6 +53,9 @@ Deno.serve(async (req) => {
 
     const { email, firstName, surname, phone, idNumber, registrationUrl } = await req.json();
     if (!email || !firstName || !surname || !phone || !idNumber || !registrationUrl) return json({ error: 'Missing invitation fields.' }, 400);
+    const invalidIdNumber = idNumberError(idNumber);
+    if (invalidIdNumber) return json({ error: invalidIdNumber }, 400);
+    const normalizedIdNumber = String(idNumber).replace(/\s/g, '');
     const normalizedEmail = String(email).trim().toLowerCase();
     // A newly issued invitation invalidates every earlier code for this email.
     await adminClient.from('staff_invitations').update({ used_at: new Date().toISOString() }).eq('email', normalizedEmail).is('used_at', null);
@@ -38,7 +64,7 @@ Deno.serve(async (req) => {
     const { data: invitation, error: invitationError } = await adminClient.from('staff_invitations').insert({
       email: normalizedEmail,
       code_hash: await sha256(code),
-      first_name: String(firstName).trim(), surname: String(surname).trim(), phone: String(phone).trim(), id_number: String(idNumber).trim(), invited_by: caller.id,
+      first_name: String(firstName).trim(), surname: String(surname).trim(), phone: String(phone).trim(), id_number: normalizedIdNumber, invited_by: caller.id,
     }).select('id, expires_at').single();
     if (invitationError) return json({ error: invitationError.code === '23505' ? 'This email already has an active staff invitation.' : invitationError.message }, 400);
 

@@ -10,6 +10,7 @@ import { Droplets, Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { getAuthRedirectUrl } from "@/lib/authRedirect";
 import { showFieldError } from "@/lib/fieldError";
+import { edgeFunctionError } from "@/lib/edgeFunctionError";
 
 const signUpSchema = z.object({
   fullName: z.string().trim().min(2, "Enter at least two characters for your name.").max(80),
@@ -155,7 +156,9 @@ const Auth = () => {
           });
           if (error) {
             const status = error.context instanceof Response ? error.context.status : null;
-            throw new Error(status === 401 ? "Invalid username or password." : "Username sign-in is temporarily unavailable. Sign in with your email address.");
+            throw status === 401
+              ? new Error("Invalid username or password.")
+              : await edgeFunctionError(error);
           }
           if (!tokens?.accessToken || !tokens?.refreshToken) throw new Error("Username sign-in is temporarily unavailable. Sign in with your email address.");
           const { data, error: sessionError } = await supabase.auth.setSession({
@@ -190,7 +193,12 @@ const Auth = () => {
         navigate(destination, { replace: true });
       }
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Something went wrong";
+      // Supabase database (PostgREST) errors are plain objects, not Error instances.
+      const errorMessage = err instanceof Error
+        ? err.message
+        : typeof (err as { message?: unknown } | null)?.message === "string"
+          ? (err as { message: string }).message
+          : "Something went wrong";
       showFieldError(errorMessage, mode === "signin" ? "password" : "email");
     } finally {
       setLoading(false);

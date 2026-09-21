@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { showFieldError } from "@/lib/fieldError";
+import { edgeFunctionError } from "@/lib/edgeFunctionError";
 
 const StaffRegistration = () => {
   const navigate = useNavigate();
@@ -32,7 +33,7 @@ const StaffRegistration = () => {
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("staff-signup", { body: { invitationId, code, password } });
-      if (error) throw error;
+      if (error) throw await edgeFunctionError(error);
       if (!data?.ok) throw new Error(data?.error || "Registration failed.");
 
       await supabase.auth.signOut();
