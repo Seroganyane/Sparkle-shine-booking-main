@@ -75,16 +75,13 @@ export const BookingDialog = ({
   }, [initialDraft]);
 
   const loadSlots = async () => {
-    const result = await supabase
-      .from("bookings")
-      .select("slot_number,status")
-      .in("status", ["pending", "confirmed", "in_queue", "in_progress"]);
-    const rows = (result.data as Array<{ slot_number: number | null }> | null) || [];
-    const occupied = new Set<number>(
-      rows
-        .map((row) => row.slot_number)
-        .filter((slot): slot is number => typeof slot === "number")
-    );
+    // A regular customer's RLS policy only lets them see their own bookings, so
+    // querying the bookings table directly here would under-report how many
+    // bays are actually taken. This RPC returns just the occupied slot
+    // numbers, computed server-side across every customer's bookings.
+    const { data, error } = await supabase.rpc("get_occupied_wash_slots");
+    if (error) console.error("Could not load wash bay availability:", error.message);
+    const occupied = new Set<number>((data as number[] | null) || []);
     const free = ALL_SLOTS.filter((slot) => !occupied.has(slot));
     setAvailableSlots(free);
     if (form.slot_number && occupied.has(form.slot_number)) {
@@ -154,7 +151,13 @@ export const BookingDialog = ({
         status: useFree ? "in_queue" : "pending",
         queue_position,
       });
-      if (error) throw new Error(error.message);
+      if (error) {
+        if (error.code === "23505") {
+          loadSlots();
+          throw new Error("That wash bay was just taken by another booking. Please choose a different slot.");
+        }
+        throw new Error(error.message);
+      }
       if (useFree) {
         const { error: profileError } = await supabase
           .from("profiles")

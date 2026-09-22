@@ -59,10 +59,9 @@ export const Chatbot = ({ onBookingReady }: { onBookingReady: (draft: BookingPre
 
     recognition.onresult = async (event: any) => {
       const transcript = event.results?.[0]?.[0]?.transcript?.trim();
-      if (transcript) {
-        addMessage({ from: "user", text: transcript });
-        await handleUserMessage(transcript);
-      }
+      // handleUserMessage adds the "user" message itself — adding it here too
+      // would show every voice message twice.
+      if (transcript) await handleUserMessage(transcript);
       setListening(false);
     };
 
@@ -103,17 +102,13 @@ export const Chatbot = ({ onBookingReady }: { onBookingReady: (draft: BookingPre
   };
 
   const getAvailableSlots = async () => {
-    const { data } = await supabase
-      .from("bookings")
-      .select("slot_number,status")
-      .in("status", ["pending", "confirmed", "in_queue", "in_progress"]);
-
-    const rows = (data as Array<{ slot_number: number | null }> | null) || [];
-    const occupied = new Set<number>(
-      rows
-        .map((row) => row.slot_number)
-        .filter((slot): slot is number => typeof slot === "number")
-    );
+    // A regular customer's RLS policy only lets them see their own bookings, so
+    // querying the bookings table directly here would under-report how many
+    // bays are actually taken. This RPC returns just the occupied slot
+    // numbers, computed server-side across every customer's bookings.
+    const { data, error } = await supabase.rpc("get_occupied_wash_slots");
+    if (error) console.error("Could not load wash bay availability:", error.message);
+    const occupied = new Set<number>((data as number[] | null) || []);
     const free = Array.from({ length: 10 }, (_, i) => i + 1).filter((slot) => !occupied.has(slot));
     setAvailableSlots(free);
     return free;
@@ -232,12 +227,15 @@ export const Chatbot = ({ onBookingReady }: { onBookingReady: (draft: BookingPre
     }
 
     if (stage === "awaiting_package") {
-      const chosen = (text.trim().toLowerCase() as PackageId);
-      const match = PACKAGES.find((pkg) => pkg.id === chosen || pkg.name.toLowerCase().includes(chosen));
-      const selectedPackage = match ? match.id : ("premium" as PackageId);
-      const price = getPackage(selectedPackage).price;
-      setDraft((prev) => ({ ...prev, package: selectedPackage }));
-      addMessage({ from: "bot", text: `A ${getPackage(selectedPackage).name} costs R ${price}. Type 'yes' to review these details in the booking form.` });
+      const chosen = normalized;
+      const match = PACKAGES.find((pkg) => chosen.includes(pkg.id) || chosen.includes(pkg.name.split(" ")[0].toLowerCase()));
+      if (!match) {
+        addMessage({ from: "bot", text: "Sorry, I didn't catch that. Please reply Basic, Premium, or Deluxe." });
+        return;
+      }
+      const price = getPackage(match.id).price;
+      setDraft((prev) => ({ ...prev, package: match.id }));
+      addMessage({ from: "bot", text: `A ${match.name} costs R ${price}. Type 'yes' to review these details in the booking form.` });
       setStage("awaiting_payment");
       return;
     }

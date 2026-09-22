@@ -508,6 +508,7 @@ export type Database = {
         Args: { _code_hash: string; _invitation_id: string }
         Returns: number
       }
+      get_occupied_wash_slots: { Args: never; Returns: number[] }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
