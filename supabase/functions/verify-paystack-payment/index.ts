@@ -136,6 +136,12 @@ Deno.serve(async (request) => {
       currency: transaction.currency,
     });
     if (paymentError) throw paymentError;
+
+    // Deduct sold quantities from stock. Best-effort: the payment already
+    // succeeded, so a stock bookkeeping issue should not fail the order.
+    const { error: stockError } = await adminClient.rpc("record_order_stock", { _items: body.items });
+    if (stockError) console.error("Could not update product stock:", stockError.message);
+
     return Response.json({ success: true, orderId: order.id }, { headers: corsHeaders });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to verify payment.";

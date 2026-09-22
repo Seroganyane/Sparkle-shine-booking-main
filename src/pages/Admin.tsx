@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getPackage } from "@/lib/packages";
+import { products as productCatalog } from "@/lib/products";
 import { toast } from "sonner";
 import { Database } from "@/integrations/supabase/types";
 import { getAuthRedirectUrl } from "@/lib/authRedirect";
@@ -18,7 +19,7 @@ import { edgeFunctionError } from "@/lib/edgeFunctionError";
 import { ID_NUMBER_LENGTH, idNumberError, normalizeIdNumber } from "@/lib/idNumber";
 import { showFieldError } from "@/lib/fieldError";
 import {
-  ArrowDown, ArrowUp, Bell, Car, CheckCircle2, Gift, ListOrdered, Play, Send, Shield, Users, LucideIcon, UserPlus
+  ArrowDown, ArrowUp, Bell, Car, CheckCircle2, Gift, ListOrdered, Play, Send, Shield, Users, LucideIcon, UserPlus, ShoppingBag, TriangleAlert, PackageCheck
 } from "lucide-react";
 
 type Booking = Database['public']['Tables']['bookings']['Row'] & { profile?: Database['public']['Tables']['profiles']['Row'] };
@@ -33,6 +34,13 @@ interface Order {
   status: string;
   created_at: string;
   profile?: Profile;
+}
+
+interface ProductStock {
+  id: string;
+  stock_quantity: number;
+  low_stock_threshold: number;
+  updated_at: string;
 }
 
 const statusColors: Record<string, string> = {
@@ -69,14 +77,17 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
   const [registerEmployeeOpen, setRegisterEmployeeOpen] = useState(false);
   const [employeeSlots, setEmployeeSlots] = useState<Record<string, number>>({});
   const [slotDrafts, setSlotDrafts] = useState<Record<string, string>>({});
+  const [productStock, setProductStock] = useState<Record<string, ProductStock>>({});
+  const [stockDrafts, setStockDrafts] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
-    const [{ data: b }, { data: p }, { data: roleRows }, { data: o }, { data: slots }] = await Promise.all([
+    const [{ data: b }, { data: p }, { data: roleRows }, { data: o }, { data: slots }, { data: stock }] = await Promise.all([
       supabase.from("bookings").select("*").order("scheduled_at", { ascending: true }),
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("user_roles").select("user_id, role"),
       supabase.from("orders").select("*").order("created_at", { ascending: false }),
       supabase.from("employee_slots").select("employee_id, slot_number"),
+      supabase.from("products").select("*"),
     ]);
     // attach profile to each booking
     const map = new Map((p || []).map((x: Profile) => [x.id, x]));
@@ -101,6 +112,16 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
       profile: map.get(order.user_id)
     }));
     setOrders(ordersWithProfiles);
+
+    setProductStock(Object.fromEntries((stock || []).map((row: ProductStock) => [row.id, row])));
+    setStockDrafts((current) => {
+      const next = { ...current };
+      for (const row of (stock || []) as ProductStock[]) {
+        next[row.id] = String(row.stock_quantity);
+      }
+      return next;
+    });
+
     setLoadingScreen(false);
   }, []);
 
@@ -111,6 +132,7 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
       .channel("admin-updates")
       .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "products" }, load)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, (payload) => {
         const notification = payload.new as Database["public"]["Tables"]["notifications"]["Row"];
         toast.success(notification.title, { description: notification.message });
@@ -193,7 +215,42 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
     return revenue === 0 ? 0 : ((revenue - costFor(list)) / revenue) * 100;
   };
 
+  // Money made from products sold in the store (paid orders), broken down by period.
+  const paidOrders = orders.filter((o) => o.status === "paid");
+  const startOfWeek = new Date();
+  startOfWeek.setDate(startOfWeek.getDate() - ((startOfWeek.getDay() + 6) % 7)); // Monday
+  startOfWeek.setHours(0, 0, 0, 0);
+  const ordersToday = paidOrders.filter((o) => new Date(o.created_at).toDateString() === new Date().toDateString());
+  const ordersThisWeek = paidOrders.filter((o) => new Date(o.created_at) >= startOfWeek);
+  const ordersThisMonth = paidOrders.filter(
+    (o) => new Date(o.created_at).getMonth() === new Date().getMonth() && new Date(o.created_at).getFullYear() === new Date().getFullYear()
+  );
+  const ordersThisYear = paidOrders.filter((o) => new Date(o.created_at).getFullYear() === new Date().getFullYear());
+  const productRevenueFor = (list: Order[]) => list.reduce((sum, o) => sum + Number(o.total_amount ?? 0), 0);
+  const formatCurrency = (value: number) => `R ${value.toFixed(2)}`;
+
+  const stockRows = productCatalog.map((product) => ({
+    product,
+    stock: productStock[product.id]?.stock_quantity ?? 0,
+    threshold: productStock[product.id]?.low_stock_threshold ?? 5,
+  }));
+  const lowStockRows = stockRows.filter((row) => row.stock <= row.threshold);
+
   const visible = filter === "queue" ? queueBookings : filter === "completed" ? completedBookings : bookings;
+
+  const restockProduct = async (productId: string) => {
+    const rawValue = stockDrafts[productId];
+    const nextStock = Number(rawValue);
+    if (!rawValue || Number.isNaN(nextStock) || nextStock < 0) {
+      toast.error("Enter a valid stock count (0 or more).");
+      return;
+    }
+    const { error } = await supabase
+      .from("products")
+      .upsert({ id: productId, stock_quantity: nextStock, updated_at: new Date().toISOString() }, { onConflict: "id" });
+    if (error) toast.error(error.message);
+    else { toast.success("Stock updated."); load(); }
+  };
 
   const assignPermanentEmployeeSlot = async (employeeId: string) => {
     const rawValue = slotDrafts[employeeId];
@@ -438,10 +495,57 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
             <StatCard icon={CheckCircle2} label="Completed today" value={bookings.filter((b) => b.status === "completed" && new Date(b.updated_at).toDateString() === new Date().toDateString()).length} />
             <StatCard icon={Users} label="Total customers" value={profiles.length} />
             <StatCard icon={Bell} label="Total bookings" value={bookings.length} />
-            <StatCard icon={ArrowUp} label="Daily Profit" value={revenueFor(completedToday) - costFor(completedToday)} />
-            <StatCard icon={ArrowUp} label="Monthly Profit" value={revenueFor(completedThisMonth) - costFor(completedThisMonth)} />
-            <StatCard icon={ArrowUp} label="Yearly Profit" value={revenueFor(completedThisYear) - costFor(completedThisYear)} />
-            <StatCard icon={ArrowDown} label="Total Expenses" value={costFor(completedBookings)} />
+            <StatCard icon={ArrowUp} label="Daily Profit" value={formatCurrency(revenueFor(completedToday) - costFor(completedToday))} />
+            <StatCard icon={ArrowUp} label="Monthly Profit" value={formatCurrency(revenueFor(completedThisMonth) - costFor(completedThisMonth))} />
+            <StatCard icon={ArrowUp} label="Yearly Profit" value={formatCurrency(revenueFor(completedThisYear) - costFor(completedThisYear))} />
+            <StatCard icon={ArrowDown} label="Total Expenses" value={formatCurrency(costFor(completedBookings))} />
+          </div>
+
+          <h3 className="mb-4 mt-8 font-display text-lg font-semibold">Product sales revenue</h3>
+          <p className="-mt-3 mb-4 text-sm text-muted-foreground">Money made from products sold in the store, from paid orders only.</p>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <StatCard icon={ShoppingBag} label="Daily product sales" value={formatCurrency(productRevenueFor(ordersToday))} />
+            <StatCard icon={ShoppingBag} label="Weekly product sales" value={formatCurrency(productRevenueFor(ordersThisWeek))} />
+            <StatCard icon={ShoppingBag} label="Monthly product sales" value={formatCurrency(productRevenueFor(ordersThisMonth))} />
+            <StatCard icon={ShoppingBag} label="Yearly product sales" value={formatCurrency(productRevenueFor(ordersThisYear))} />
+          </div>
+
+          <h3 className="mb-4 mt-8 font-display text-lg font-semibold">Stock levels</h3>
+          {lowStockRows.length > 0 && (
+            <div role="alert" className="mb-4 flex items-start gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-4">
+              <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+              <p className="text-sm font-medium text-destructive">
+                {lowStockRows.length === 1
+                  ? `${lowStockRows[0].product.name} is running low on stock (${lowStockRows[0].stock} left).`
+                  : `${lowStockRows.length} products are running low on stock: ${lowStockRows.map((row) => `${row.product.name} (${row.stock} left)`).join(", ")}.`}
+              </p>
+            </div>
+          )}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {stockRows.map(({ product, stock, threshold }) => {
+              const low = stock <= threshold;
+              return (
+                <div key={product.id} className={`rounded-2xl border p-5 shadow-card ${low ? "border-destructive/40 bg-destructive/5" : "border-border bg-gradient-card"}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-muted-foreground">{product.name}</div>
+                    {low ? <TriangleAlert className="h-5 w-5 text-destructive" /> : <PackageCheck className="h-5 w-5 text-primary" />}
+                  </div>
+                  <div className={`mt-2 font-display text-3xl font-bold ${low ? "text-destructive" : ""}`}>{stock} left</div>
+                  {low && <div className="mt-1 text-xs font-medium text-destructive">Low stock — running out soon</div>}
+                  <div className="mt-4 flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      className="h-9"
+                      value={stockDrafts[product.id] ?? String(stock)}
+                      onChange={(e) => setStockDrafts((prev) => ({ ...prev, [product.id]: e.target.value }))}
+                      aria-label={`Set stock for ${product.name}`}
+                    />
+                    <Button size="sm" variant="outline" onClick={() => restockProduct(product.id)}>Update</Button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </section>}
 
@@ -584,7 +688,7 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
   );
 };
 
-const StatCard = ({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: number }) => (
+const StatCard = ({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: number | string }) => (
   <div className="rounded-2xl border border-border bg-gradient-card p-5 shadow-card">
     <div className="flex items-center justify-between">
       <div className="text-sm text-muted-foreground">{label}</div>

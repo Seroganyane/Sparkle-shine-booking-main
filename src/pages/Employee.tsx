@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, Car, CheckCircle2, Clock3, Loader2, RotateCcw, ScanLine, ShieldCheck, ThumbsUp, UserRound, Badge as BadgeIcon } from "lucide-react";
+import { Camera, Car, CheckCircle2, Clock3, Loader2, RotateCcw, ScanLine, ShieldCheck, ThumbsUp, UserRound, Badge as BadgeIcon, Bell, TriangleAlert } from "lucide-react";
 import { Navbar } from "@/components/app/Navbar";
 import { AppSidebar } from "@/components/app/AppSidebar";
 import { Button } from "@/components/ui/button";
@@ -11,11 +11,13 @@ import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
 
 type Booking = Database["public"]["Tables"]["bookings"]["Row"];
+type Notif = Database["public"]["Tables"]["notifications"]["Row"];
 type Assignment = Database["public"]["Tables"]["employee_assignments"]["Row"] & { booking: Booking | null };
 
 const Employee = () => {
   const { user } = useAuth();
   const [assignment, setAssignment] = useState<Assignment | null>(null);
+  const [notifs, setNotifs] = useState<Notif[]>([]);
   const [permanentSlot, setPermanentSlot] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [finishing, setFinishing] = useState(false);
@@ -24,6 +26,9 @@ const Employee = () => {
   const [vehicleVerified, setVehicleVerified] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
+  const [mismatchDetected, setMismatchDetected] = useState(false);
+  const [mismatchPlateGuess, setMismatchPlateGuess] = useState("");
+  const [reporting, setReporting] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const booking = assignment?.booking;
   const isVehicleVerified = vehicleVerified || Boolean(assignment?.plate_verified_at);
@@ -53,14 +58,38 @@ const Employee = () => {
     else setAssignment(data as Assignment | null);
   }, [user]);
 
+  const loadNotifs = useCallback(async () => {
+    if (!user) return;
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (error) console.error("Could not load notifications:", error);
+    else setNotifs(data ?? []);
+  }, [user]);
+
+  const markRead = async (id: string) => {
+    await supabase.from("notifications").update({ read: true }).eq("id", id);
+    void loadNotifs();
+  };
+
   useEffect(() => {
+    if (!user) return;
     void loadSlot();
     void load();
+    void loadNotifs();
     const channel = supabase.channel("employee-work")
-      .on("postgres_changes", { event: "*", schema: "public", table: "employee_assignments", filter: `employee_id=eq.${user?.id}` }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "employee_assignments", filter: `employee_id=eq.${user.id}` }, load)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, (payload) => {
+        const notification = payload.new as Notif;
+        toast.success(notification.title, { description: notification.message });
+        void loadNotifs();
+      })
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
-  }, [load, loadSlot, user?.id]);
+  }, [load, loadSlot, loadNotifs, user]);
 
   useEffect(() => {
     setVehiclePhoto((currentPhoto) => {
@@ -69,6 +98,8 @@ const Employee = () => {
     });
     setVehicleVerified(false);
     setScanMessage(null);
+    setMismatchDetected(false);
+    setMismatchPlateGuess("");
   }, [booking?.id]);
 
   useEffect(() => () => {
@@ -84,6 +115,8 @@ const Employee = () => {
     });
     setVehicleVerified(false);
     setScanMessage(null);
+    setMismatchDetected(false);
+    setMismatchPlateGuess("");
     event.target.value = "";
     if (!assignment) return;
 
@@ -99,6 +132,8 @@ const Employee = () => {
       const scannedPlate = scannedLines.find((line) => line === expectedPlate);
 
       if (!scannedPlate) {
+        setMismatchDetected(true);
+        setMismatchPlateGuess(scannedLines[0] ?? "");
         setScanMessage(`The scanned plate does not match ${booking?.car_plate}. Do not start the wash.`);
         toast.error("Wrong vehicle or plate not clearly visible", { description: `Expected registration: ${booking?.car_plate}` });
         return;
@@ -120,6 +155,22 @@ const Employee = () => {
     } finally {
       setScanning(false);
     }
+  };
+
+  const reportMismatch = async () => {
+    if (!assignment) return;
+    setReporting(true);
+    const { error } = await supabase.rpc("report_vehicle_mismatch", {
+      _assignment_id: assignment.id,
+      _scanned_plate: mismatchPlateGuess,
+    });
+    setReporting(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Reported to admin", { description: "The booking was returned to the queue. Your bay is free for the next car." });
+    setAssignment(null);
   };
 
   const acceptBooking = async () => {
@@ -225,10 +276,16 @@ const Employee = () => {
               )}
 
               <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                {!isVehicleVerified && <Button type="button" variant={vehiclePhoto ? "outline" : "hero"} onClick={() => cameraInputRef.current?.click()} disabled={scanning}>
+                {!isVehicleVerified && <Button type="button" variant={vehiclePhoto ? "outline" : "hero"} onClick={() => cameraInputRef.current?.click()} disabled={scanning || reporting}>
                   {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : vehiclePhoto ? <RotateCcw className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
                   {scanning ? "Scanning number plate..." : vehiclePhoto ? "Retake plate photo" : "Scan number plate"}
                 </Button>}
+                {mismatchDetected && !isVehicleVerified && (
+                  <Button type="button" variant="destructive" onClick={reportMismatch} disabled={reporting || scanning}>
+                    {reporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <TriangleAlert className="h-4 w-4" />}
+                    {reporting ? "Reporting to admin..." : "Wrong vehicle — report to admin"}
+                  </Button>
+                )}
               </div>
 
               {scanMessage && (
@@ -237,6 +294,9 @@ const Employee = () => {
                 </p>
               )}
               {isVehicleVerified && !scanMessage && <p role="status" className="mt-4 flex items-center gap-2 text-sm font-medium text-success"><ShieldCheck className="h-4 w-4" /> Correct customer vehicle verified</p>}
+              {mismatchDetected && !isVehicleVerified && (
+                <p className="mt-2 text-xs text-muted-foreground">Sure it is the wrong car? Reporting frees this bay and tells the admin to assign you the next one.</p>
+              )}
             </div>}
 
             <Button className="mt-6 w-full sm:w-auto" variant="hero" size="lg" onClick={finishWash} disabled={finishing || !isVehicleVerified}>
@@ -252,6 +312,37 @@ const Employee = () => {
             <p className="mx-auto mt-2 max-w-md text-muted-foreground">You do not have a vehicle assigned right now. Your supervisor can assign the next car when it is ready.</p>
           </section>
         )}
+
+        <section className="mt-8 max-w-3xl">
+          <h2 className="mb-4 flex items-center gap-2 font-display text-xl font-semibold">
+            <Bell className="h-5 w-5 text-primary" /> Notifications
+          </h2>
+          <div className="space-y-2">
+            {notifs.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                No notifications yet.
+              </div>
+            ) : (
+              notifs.map((n) => (
+                <button
+                  key={n.id}
+                  type="button"
+                  onClick={() => void markRead(n.id)}
+                  className={`w-full rounded-xl border p-4 text-left transition-all ${
+                    n.read ? "border-border bg-card/80" : "border-primary/30 bg-primary/20 shadow-card"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-semibold">{n.title}</div>
+                    {!n.read && <span className="h-2 w-2 rounded-full bg-primary animate-pulse-glow" />}
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">{n.message}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{new Date(n.created_at).toLocaleString()}</p>
+                </button>
+              ))
+            )}
+          </div>
+        </section>
       </main>
     </div>
   );
