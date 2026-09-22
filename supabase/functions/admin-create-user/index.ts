@@ -33,6 +33,17 @@ const idNumberError = (value: string) => {
   return null;
 };
 
+// Supabase's built-in email sender (used until a custom SMTP provider is
+// configured) only allows a handful of emails per hour, by design — it's
+// meant for testing, not production. Turn that raw error into something an
+// admin can act on instead of just retrying blindly.
+const friendlyEmailError = (message: string | undefined) => {
+  if (message && /rate limit/i.test(message)) {
+    return 'Supabase has temporarily limited outgoing emails for this project — its built-in email sender allows only a few per hour. Wait a few minutes and try again, or set up a real email provider under Supabase Dashboard → Authentication → Emails → SMTP Settings so invitations aren’t rate-limited.';
+  }
+  return message || 'Could not send the invitation email.';
+};
+
 const sha256 = async (value: string) => {
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -79,7 +90,7 @@ Deno.serve(async (req) => {
       const { error: recoveryError } = await adminClient.auth.resetPasswordForEmail(normalizedEmail, { redirectTo: redirect.toString() });
       if (recoveryError) {
         await adminClient.from('staff_invitations').delete().eq('id', invitation.id);
-        return json({ error: recoveryError.message }, 400);
+        return json({ error: friendlyEmailError(recoveryError.message) }, 400);
       }
     } else {
       const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(normalizedEmail, {
@@ -87,7 +98,7 @@ Deno.serve(async (req) => {
       });
       if (inviteError || !inviteData.user) {
         await adminClient.from('staff_invitations').delete().eq('id', invitation.id);
-        return json({ error: inviteError?.message || 'Could not send the invitation email.' }, 400);
+        return json({ error: friendlyEmailError(inviteError?.message) }, 400);
       }
       invitedUserId = inviteData.user.id;
     }
