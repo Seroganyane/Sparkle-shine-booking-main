@@ -13,12 +13,14 @@ import type { Database } from "@/integrations/supabase/types";
 type Booking = Database["public"]["Tables"]["bookings"]["Row"];
 type Notif = Database["public"]["Tables"]["notifications"]["Row"];
 type Assignment = Database["public"]["Tables"]["employee_assignments"]["Row"] & { booking: Booking | null };
+type StaffLeave = Database["public"]["Tables"]["staff_leave"]["Row"];
 
 const Employee = () => {
   const { user } = useAuth();
   const [assignment, setAssignment] = useState<Assignment | null>(null);
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [permanentSlot, setPermanentSlot] = useState<number | null>(null);
+  const [myLeave, setMyLeave] = useState<(StaffLeave & { otherName?: string }) | null>(null);
   const [loading, setLoading] = useState(true);
   const [finishing, setFinishing] = useState(false);
   const [accepting, setAccepting] = useState(false);
@@ -75,13 +77,34 @@ const Employee = () => {
     void loadNotifs();
   };
 
+  const loadMyLeave = useCallback(async () => {
+    if (!user) return;
+    const { data, error } = await supabase
+      .from("staff_leave")
+      .select("*")
+      .or(`employee_id.eq.${user.id},covering_employee_id.eq.${user.id}`)
+      .is("ended_at", null)
+      .maybeSingle();
+    if (error) { console.error("Could not load leave status:", error); return; }
+    if (!data) { setMyLeave(null); return; }
+    const otherId = data.employee_id === user.id ? data.covering_employee_id : data.employee_id;
+    let otherName: string | undefined;
+    if (otherId) {
+      const { data: otherProfile } = await supabase.from("profiles").select("full_name, email").eq("id", otherId).maybeSingle();
+      otherName = otherProfile?.full_name || otherProfile?.email || undefined;
+    }
+    setMyLeave({ ...data, otherName });
+  }, [user]);
+
   useEffect(() => {
     if (!user) return;
     void loadSlot();
     void load();
     void loadNotifs();
+    void loadMyLeave();
     const channel = supabase.channel("employee-work")
       .on("postgres_changes", { event: "*", schema: "public", table: "employee_assignments", filter: `employee_id=eq.${user.id}` }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "staff_leave" }, () => { void loadSlot(); void loadMyLeave(); })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, (payload) => {
         const notification = payload.new as Notif;
         toast.success(notification.title, { description: notification.message });
@@ -89,7 +112,7 @@ const Employee = () => {
       })
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
-  }, [load, loadSlot, loadNotifs, user]);
+  }, [load, loadSlot, loadNotifs, loadMyLeave, user]);
 
   useEffect(() => {
     setVehiclePhoto((currentPhoto) => {
@@ -216,6 +239,15 @@ const Employee = () => {
           </Badge>
         </div>
 
+        {myLeave?.employee_id === user?.id && (
+          <div className="mb-6 rounded-2xl border border-warning/30 bg-warning/10 p-4 md:p-6">
+            <p className="text-sm font-medium text-warning">You are marked on leave</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {myLeave.otherName ? `${myLeave.otherName} is covering Wash Bay #${myLeave.slot_number} while you're away.` : `Wash Bay #${myLeave.slot_number} has no cover yet.`} Your supervisor will restore your bay when you're back.
+            </p>
+          </div>
+        )}
+
         {permanentSlot && (
           <div className="mb-6 rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/10 to-primary/5 p-4 md:p-6">
             <div className="flex items-center gap-3">
@@ -223,6 +255,9 @@ const Employee = () => {
               <div>
                 <p className="text-sm font-medium text-primary">Your permanent station</p>
                 <p className="font-display text-2xl font-bold text-primary">Wash bay #{permanentSlot}</p>
+                {myLeave?.covering_employee_id === user?.id && (
+                  <p className="mt-1 text-xs text-muted-foreground">Covering for {myLeave.otherName || "a colleague"} while they're on leave.</p>
+                )}
               </div>
             </div>
           </div>

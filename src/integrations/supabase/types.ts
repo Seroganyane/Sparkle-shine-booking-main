@@ -462,6 +462,81 @@ export type Database = {
         }
         Relationships: []
       }
+      staff_leave: {
+        Row: {
+          covering_employee_id: string | null
+          created_by: string
+          employee_id: string
+          ended_at: string | null
+          ended_by: string | null
+          id: string
+          reason: string | null
+          slot_number: number
+          started_at: string
+        }
+        Insert: {
+          covering_employee_id?: string | null
+          created_by: string
+          employee_id: string
+          ended_at?: string | null
+          ended_by?: string | null
+          id?: string
+          reason?: string | null
+          slot_number: number
+          started_at?: string
+        }
+        Update: {
+          covering_employee_id?: string | null
+          created_by?: string
+          employee_id?: string
+          ended_at?: string | null
+          ended_by?: string | null
+          id?: string
+          reason?: string | null
+          slot_number?: number
+          started_at?: string
+        }
+        Relationships: []
+      }
+      system_reports: {
+        Row: {
+          created_at: string
+          description: string
+          id: string
+          reported_by: string
+          resolution_notes: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          severity: Database["public"]["Enums"]["system_report_severity"]
+          status: Database["public"]["Enums"]["system_report_status"]
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          id?: string
+          reported_by: string
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity?: Database["public"]["Enums"]["system_report_severity"]
+          status?: Database["public"]["Enums"]["system_report_status"]
+          title: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          id?: string
+          reported_by?: string
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity?: Database["public"]["Enums"]["system_report_severity"]
+          status?: Database["public"]["Enums"]["system_report_status"]
+          title?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -492,6 +567,10 @@ export type Database = {
         Args: { _assignment_id: string }
         Returns: undefined
       }
+      assign_leave_cover: {
+        Args: { _covering_employee_id: string; _leave_id: string }
+        Returns: undefined
+      }
       auto_assign_booking_slot: {
         Args: { _booking_id: string }
         Returns: number
@@ -508,6 +587,7 @@ export type Database = {
         Args: { _code_hash: string; _invitation_id: string }
         Returns: number
       }
+      end_staff_leave: { Args: { _leave_id: string }; Returns: undefined }
       get_occupied_wash_slots: { Args: never; Returns: number[] }
       has_role: {
         Args: {
@@ -528,9 +608,29 @@ export type Database = {
         }
         Returns: Json
       }
+      report_system_issue: {
+        Args: {
+          _description: string
+          _severity?: Database["public"]["Enums"]["system_report_severity"]
+          _title: string
+        }
+        Returns: string
+      }
       report_vehicle_mismatch: {
         Args: { _assignment_id: string; _scanned_plate: string }
         Returns: undefined
+      }
+      resolve_system_report: {
+        Args: { _report_id: string; _resolution_notes?: string }
+        Returns: undefined
+      }
+      start_staff_leave: {
+        Args: {
+          _covering_employee_id?: string
+          _employee_id: string
+          _reason: string
+        }
+        Returns: string
       }
       username_is_available: { Args: { candidate: string }; Returns: boolean }
       verify_employee_vehicle: {
@@ -549,6 +649,8 @@ export type Database = {
         | "cancelled"
       employee_assignment_status: "active" | "completed"
       payment_status: "unpaid" | "paid" | "free"
+      system_report_severity: "low" | "medium" | "high" | "critical"
+      system_report_status: "open" | "resolved"
       wash_package: "basic" | "premium" | "deluxe"
     }
     CompositeTypes: {
@@ -691,6 +793,8 @@ export const Constants = {
       ],
       employee_assignment_status: ["active", "completed"],
       payment_status: ["unpaid", "paid", "free"],
+      system_report_severity: ["low", "medium", "high", "critical"],
+      system_report_status: ["open", "resolved"],
       wash_package: ["basic", "premium", "deluxe"],
     },
   },

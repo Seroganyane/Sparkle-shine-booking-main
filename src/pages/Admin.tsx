@@ -19,7 +19,7 @@ import { edgeFunctionError } from "@/lib/edgeFunctionError";
 import { ID_NUMBER_LENGTH, idNumberError, normalizeIdNumber } from "@/lib/idNumber";
 import { showFieldError } from "@/lib/fieldError";
 import {
-  ArrowDown, ArrowUp, Bell, Car, CheckCircle2, Gift, ListOrdered, Play, Send, Shield, Users, LucideIcon, UserPlus, ShoppingBag, TriangleAlert, PackageCheck
+  ArrowDown, ArrowUp, Bell, Car, CheckCircle2, Gift, ListOrdered, Play, Send, Shield, Users, LucideIcon, UserPlus, ShoppingBag, TriangleAlert, PackageCheck, CalendarOff, RotateCcw, MessageSquareWarning
 } from "lucide-react";
 
 type Booking = Database['public']['Tables']['bookings']['Row'] & { profile?: Database['public']['Tables']['profiles']['Row'] };
@@ -42,6 +42,17 @@ interface ProductStock {
   low_stock_threshold: number;
   updated_at: string;
 }
+
+type StaffLeave = Database['public']['Tables']['staff_leave']['Row'];
+type SystemReport = Database['public']['Tables']['system_reports']['Row'];
+type ReportSeverity = Database['public']['Enums']['system_report_severity'];
+
+const severityColors: Record<ReportSeverity, string> = {
+  low: "border-muted-foreground/30 bg-muted text-muted-foreground",
+  medium: "border-warning/30 bg-warning/10 text-warning",
+  high: "border-destructive/30 bg-destructive/10 text-destructive",
+  critical: "border-destructive/50 bg-destructive/20 text-destructive",
+};
 
 const statusColors: Record<string, string> = {
   pending: "bg-warning/20 text-warning border-warning/30",
@@ -79,15 +90,21 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
   const [slotDrafts, setSlotDrafts] = useState<Record<string, string>>({});
   const [productStock, setProductStock] = useState<Record<string, ProductStock>>({});
   const [stockDrafts, setStockDrafts] = useState<Record<string, string>>({});
+  const [staffLeave, setStaffLeave] = useState<StaffLeave[]>([]);
+  const [leaveDialogEmployee, setLeaveDialogEmployee] = useState<Profile | null>(null);
+  const [systemReports, setSystemReports] = useState<SystemReport[]>([]);
+  const [reportIssueOpen, setReportIssueOpen] = useState(false);
 
   const load = useCallback(async () => {
-    const [{ data: b }, { data: p }, { data: roleRows }, { data: o }, { data: slots }, { data: stock }] = await Promise.all([
+    const [{ data: b }, { data: p }, { data: roleRows }, { data: o }, { data: slots }, { data: stock }, { data: leave }, { data: reports }] = await Promise.all([
       supabase.from("bookings").select("*").order("scheduled_at", { ascending: true }),
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("user_roles").select("user_id, role"),
       supabase.from("orders").select("*").order("created_at", { ascending: false }),
       supabase.from("employee_slots").select("employee_id, slot_number"),
       supabase.from("products").select("*"),
+      supabase.from("staff_leave").select("*").is("ended_at", null).order("started_at", { ascending: false }),
+      supabase.from("system_reports").select("*").order("created_at", { ascending: false }).limit(50),
     ]);
     // attach profile to each booking
     const map = new Map((p || []).map((x: Profile) => [x.id, x]));
@@ -122,6 +139,9 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
       return next;
     });
 
+    setStaffLeave(leave || []);
+    setSystemReports(reports || []);
+
     setLoadingScreen(false);
   }, []);
 
@@ -133,6 +153,8 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
       .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "products" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "staff_leave" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "system_reports" }, load)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, (payload) => {
         const notification = payload.new as Database["public"]["Tables"]["notifications"]["Row"];
         toast.success(notification.title, { description: notification.message });
@@ -322,6 +344,55 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
     load();
   };
 
+  // An employee can physically cover only one bay at a time: no permanent bay
+  // of their own, not on leave themselves, and not already covering someone else.
+  const onLeaveEmployeeIds = new Set(staffLeave.map((l) => l.employee_id));
+  const coveringEmployeeIds = new Set(staffLeave.map((l) => l.covering_employee_id).filter((id): id is string => Boolean(id)));
+  const availableForCover = employees.filter(
+    (e) => !employeeSlots[e.id] && !onLeaveEmployeeIds.has(e.id) && !coveringEmployeeIds.has(e.id)
+  );
+
+  const startLeave = async (employeeId: string, reason: string, coveringEmployeeId: string | null) => {
+    const { error } = await supabase.rpc("start_staff_leave", {
+      _employee_id: employeeId,
+      _reason: reason,
+      _covering_employee_id: coveringEmployeeId,
+    });
+    if (error) { toast.error(error.message); return; }
+    toast.success(coveringEmployeeId ? "Leave started — bay handed to the covering staff member." : "Leave started. Assign a cover when someone is available.");
+    setLeaveDialogEmployee(null);
+    load();
+  };
+
+  const assignCover = async (leaveId: string, coveringEmployeeId: string) => {
+    const { error } = await supabase.rpc("assign_leave_cover", { _leave_id: leaveId, _covering_employee_id: coveringEmployeeId });
+    if (error) { toast.error(error.message); return; }
+    toast.success("Cover assigned.");
+    load();
+  };
+
+  const endLeave = async (leaveId: string) => {
+    const { error } = await supabase.rpc("end_staff_leave", { _leave_id: leaveId });
+    if (error) { toast.error(error.message); return; }
+    toast.success("Leave ended — bay handed back.");
+    load();
+  };
+
+  const reportSystemIssue = async (title: string, description: string, severity: ReportSeverity) => {
+    const { error } = await supabase.rpc("report_system_issue", { _title: title, _description: description, _severity: severity });
+    if (error) { toast.error(error.message); return; }
+    toast.success("Reported to the System Administrator.");
+    setReportIssueOpen(false);
+    load();
+  };
+
+  const resolveSystemReport = async (reportId: string) => {
+    const { error } = await supabase.rpc("resolve_system_report", { _report_id: reportId });
+    if (error) { toast.error(error.message); return; }
+    toast.success("Marked as resolved.");
+    load();
+  };
+
   const makeEmployee = async (profileId: string) => {
     const { error } = await supabase.from("user_roles").upsert({ user_id: profileId, role: "employee" }, { onConflict: "user_id,role" });
     if (error) toast.error(error.message); else { toast.success("Staff account can now use the employee workspace."); load(); }
@@ -380,6 +451,9 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
             <p className="text-muted-foreground">Manage bookings, queue & rewards</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="border-destructive/40 text-destructive hover:bg-destructive/10" onClick={() => setReportIssueOpen(true)}>
+              <MessageSquareWarning className="h-4 w-4" /> Report a system problem
+            </Button>
             {view === "employees" && <>
             <Dialog open={registerEmployeeOpen} onOpenChange={setRegisterEmployeeOpen}>
               <DialogTrigger asChild>
@@ -457,10 +531,17 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
             </div>
           ) : (
             <div className="space-y-3">
-              {employees.map((employee) => (
+              {employees.map((employee) => {
+                const onLeave = staffLeave.find((l) => l.employee_id === employee.id);
+                const covering = staffLeave.find((l) => l.covering_employee_id === employee.id);
+                return (
                 <div key={employee.id} className="flex flex-col gap-3 rounded-xl border border-border p-4 md:flex-row md:items-center md:justify-between">
                   <div>
-                    <div className="font-display text-lg font-semibold">{employee.full_name || employee.email || "Unnamed staff member"}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="font-display text-lg font-semibold">{employee.full_name || employee.email || "Unnamed staff member"}</div>
+                      {onLeave && <Badge variant="outline" className="border-warning/30 bg-warning/10 text-warning">On leave</Badge>}
+                      {covering && <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary">Covering Bay #{covering.slot_number}</Badge>}
+                    </div>
                     <div className="text-sm text-muted-foreground">
                       {employee.email} · {employee.phone || "No phone provided"}
                     </div>
@@ -481,9 +562,120 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
                     <Button variant="hero" size="sm" onClick={() => assignPermanentEmployeeSlot(employee.id)}>
                       <UserPlus className="h-4 w-4" /> Assign permanent slot
                     </Button>
+                    {employeeSlots[employee.id] && !onLeave && (
+                      <Button variant="outline" size="sm" onClick={() => setLeaveDialogEmployee(employee)}>
+                        <CalendarOff className="h-4 w-4" /> Put on leave
+                      </Button>
+                    )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
+            </div>
+          )}
+        </section>}
+
+        {view === "employees" && staffLeave.length > 0 && <section className="mb-8 rounded-2xl border border-warning/30 bg-warning/5 p-5 shadow-card">
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 font-display text-xl font-semibold"><CalendarOff className="h-5 w-5 text-warning" /> Staff on leave</h2>
+            <Badge variant="outline" className="border-warning/30 bg-warning/10 text-warning">{staffLeave.length} active</Badge>
+          </div>
+          <div className="space-y-3">
+            {staffLeave.map((leave) => {
+              const employee = profiles.find((p) => p.id === leave.employee_id);
+              const cover = leave.covering_employee_id ? profiles.find((p) => p.id === leave.covering_employee_id) : null;
+              return (
+                <div key={leave.id} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="font-display text-lg font-semibold">{employee?.full_name || employee?.email || "Unknown staff member"}</div>
+                    <div className="text-sm text-muted-foreground">Wash Bay #{leave.slot_number} · on leave since {new Date(leave.started_at).toLocaleDateString()}{leave.reason ? ` · ${leave.reason}` : ""}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {cover ? `Covered by ${cover.full_name || cover.email}` : "No one covering yet — bay is unstaffed"}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    {!leave.covering_employee_id && (
+                      <Select onValueChange={(employeeId) => assignCover(leave.id, employeeId)} disabled={availableForCover.length === 0}>
+                        <SelectTrigger className="w-48"><SelectValue placeholder={availableForCover.length === 0 ? "No staff available" : "Assign a cover"} /></SelectTrigger>
+                        <SelectContent>
+                          {availableForCover.map((e) => (
+                            <SelectItem key={e.id} value={e.id}>{e.full_name || e.email || "Unnamed staff member"}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    <Button variant="hero" size="sm" onClick={() => endLeave(leave.id)}>
+                      <RotateCcw className="h-4 w-4" /> End leave & restore bay
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>}
+
+        {leaveDialogEmployee && (
+          <StaffLeaveDialog
+            employee={leaveDialogEmployee}
+            slotNumber={employeeSlots[leaveDialogEmployee.id]}
+            availableForCover={availableForCover}
+            onClose={() => setLeaveDialogEmployee(null)}
+            onSubmit={startLeave}
+          />
+        )}
+
+        {reportIssueOpen && (
+          <ReportSystemIssueDialog onClose={() => setReportIssueOpen(false)} onSubmit={reportSystemIssue} />
+        )}
+
+        {view === "overview" && <section className="mb-8">
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 font-display text-xl font-semibold"><MessageSquareWarning className="h-5 w-5 text-primary" /> System reports</h2>
+            {systemReports.some((r) => r.status === "open") && (
+              <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">
+                {systemReports.filter((r) => r.status === "open").length} open
+              </Badge>
+            )}
+          </div>
+          {systemReports.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+              No system problems reported. Use "Report a system problem" above if something is wrong across the app.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {systemReports.map((report) => {
+                const reporter = profiles.find((p) => p.id === report.reported_by);
+                const resolver = report.resolved_by ? profiles.find((p) => p.id === report.resolved_by) : null;
+                return (
+                  <div key={report.id} className={`rounded-2xl border p-5 shadow-card ${report.status === "open" ? "border-destructive/30 bg-destructive/5" : "border-border bg-gradient-card"}`}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-display text-lg font-semibold">{report.title}</span>
+                          <Badge variant="outline" className={severityColors[report.severity]}>{report.severity}</Badge>
+                          <Badge variant="outline" className={report.status === "open" ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-success/30 bg-success/10 text-success"}>
+                            {report.status}
+                          </Badge>
+                        </div>
+                        <p className="mt-2 text-sm text-muted-foreground">{report.description}</p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Reported by {reporter?.full_name || reporter?.email || "an admin"} · {new Date(report.created_at).toLocaleString()}
+                        </p>
+                        {report.status === "resolved" && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Resolved by {resolver?.full_name || resolver?.email || "an admin"}{report.resolution_notes ? `: ${report.resolution_notes}` : ""}
+                          </p>
+                        )}
+                      </div>
+                      {report.status === "open" && (
+                        <Button variant="outline" size="sm" onClick={() => resolveSystemReport(report.id)}>
+                          <CheckCircle2 className="h-4 w-4" /> Mark resolved
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>}
@@ -783,6 +975,128 @@ const NotifyDialog = ({ booking, onClose }: { booking: Booking; onClose: () => v
           </div>
           <Button variant="hero" className="w-full" onClick={send} disabled={loading}>
             <Send className="h-4 w-4" /> Send notification
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const StaffLeaveDialog = ({
+  employee, slotNumber, availableForCover, onClose, onSubmit,
+}: {
+  employee: Profile;
+  slotNumber: number | undefined;
+  availableForCover: Profile[];
+  onClose: () => void;
+  onSubmit: (employeeId: string, reason: string, coveringEmployeeId: string | null) => Promise<void>;
+}) => {
+  const [reason, setReason] = useState("");
+  const [coveringEmployeeId, setCoveringEmployeeId] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    setLoading(true);
+    try {
+      await onSubmit(employee.id, reason, coveringEmployeeId || null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="font-display">Put {employee.full_name || employee.email} on leave</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            This frees Wash Bay #{slotNumber} from {employee.full_name || "this staff member"}. Pick an available staff member to cover it now, or leave it unassigned and cover it later.
+          </p>
+          <div>
+            <Label>Reason (optional)</Label>
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={200} placeholder="Sick leave" />
+          </div>
+          <div>
+            <Label>Cover for Wash Bay #{slotNumber}</Label>
+            <Select value={coveringEmployeeId} onValueChange={setCoveringEmployeeId}>
+              <SelectTrigger><SelectValue placeholder={availableForCover.length === 0 ? "No staff available right now" : "Choose a staff member (optional)"} /></SelectTrigger>
+              <SelectContent>
+                {availableForCover.map((e) => (
+                  <SelectItem key={e.id} value={e.id}>{e.full_name || e.email || "Unnamed staff member"}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {availableForCover.length === 0 && (
+              <p className="mt-1 text-xs text-muted-foreground">No staff are currently free to cover — you can assign one later from "Staff on leave".</p>
+            )}
+          </div>
+          <Button variant="hero" className="w-full" onClick={submit} disabled={loading}>
+            <CalendarOff className="h-4 w-4" /> Start leave
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const ReportSystemIssueDialog = ({
+  onClose, onSubmit,
+}: {
+  onClose: () => void;
+  onSubmit: (title: string, description: string, severity: ReportSeverity) => Promise<void>;
+}) => {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [severity, setSeverity] = useState<ReportSeverity>("medium");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    if (!title.trim() || !description.trim()) {
+      toast.error("Give the problem a title and a description.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await onSubmit(title, description, severity);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="font-display">Report a system problem</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Use this for problems with the app itself — not a single customer or booking — so it reaches the System Administrator.
+          </p>
+          <div>
+            <Label htmlFor="report-title">What's wrong</Label>
+            <Input id="report-title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} placeholder="e.g. Payments are failing for everyone" />
+          </div>
+          <div>
+            <Label htmlFor="report-description">Details</Label>
+            <Textarea id="report-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} maxLength={1000} placeholder="What did you see, when did it start, does it affect everyone or just some bookings?" />
+          </div>
+          <div>
+            <Label>Severity</Label>
+            <Select value={severity} onValueChange={(v: ReportSeverity) => setSeverity(v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="low">Low — minor annoyance</SelectItem>
+                <SelectItem value="medium">Medium — affects some people</SelectItem>
+                <SelectItem value="high">High — affects most people</SelectItem>
+                <SelectItem value="critical">Critical — the system is down</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button variant="hero" className="w-full" onClick={submit} disabled={loading}>
+            <MessageSquareWarning className="h-4 w-4" /> Send report
           </Button>
         </div>
       </DialogContent>
