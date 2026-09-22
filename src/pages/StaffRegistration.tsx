@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Droplets, Loader2, UserRound } from "lucide-react";
 import { toast } from "sonner";
@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { showFieldError } from "@/lib/fieldError";
 import { edgeFunctionError } from "@/lib/edgeFunctionError";
 
@@ -16,12 +17,14 @@ const StaffRegistration = () => {
   const [code, setCode] = useState(params.get("code") ?? "");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    void supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? ""));
-  }, []);
+  // The invitation link signs the visitor in via a token in the URL, which
+  // Supabase processes asynchronously. Reading the session from the shared
+  // auth context (instead of a one-shot getUser() call here) means this page
+  // picks it up correctly however long that takes, instead of the button
+  // staying stuck on "not signed in" if it checked a beat too early.
+  const { user, loading: authLoading } = useAuth();
+  const email = user?.email ?? "";
 
   const register = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -67,11 +70,11 @@ const StaffRegistration = () => {
             <div><Label htmlFor="invite-code">Invitation code</Label><Input id="invite-code" inputMode="numeric" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} required /></div>
             <div><Label htmlFor="staff-password">Create password</Label><Input id="staff-password" type="password" maxLength={72} value={password} onChange={(event) => setPassword(event.target.value)} required /></div>
             <div><Label htmlFor="staff-password-confirm">Confirm password</Label><Input id="staff-password-confirm" type="password" maxLength={72} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required /></div>
-            <Button type="submit" variant="hero" size="lg" className="w-full" disabled={loading || !email}>
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />} Activate staff account
+            <Button type="submit" variant="hero" size="lg" className="w-full" disabled={loading || authLoading || !email}>
+              {(loading || authLoading) && <Loader2 className="h-4 w-4 animate-spin" />} {authLoading ? "Checking your invitation..." : "Activate staff account"}
             </Button>
           </form>
-          {!email && <p className="mt-4 text-center text-sm text-warning">Open this page using the link in your invitation email.</p>}
+          {!authLoading && !email && <p className="mt-4 text-center text-sm text-warning">Open this page using the link in your invitation email.</p>}
         </div>
       </div>
     </div>
