@@ -261,16 +261,16 @@ export const BookingDialog = ({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label htmlFor="make">Car make</Label>
-              <Input id="make" placeholder="Toyota" value={form.car_make} onChange={(e) => setForm({ ...form, car_make: e.target.value })} required />
+              <Input id="make" placeholder="Toyota" maxLength={50} value={form.car_make} onChange={(e) => setForm({ ...form, car_make: e.target.value })} required />
             </div>
             <div>
               <Label htmlFor="model">Model</Label>
-              <Input id="model" placeholder="Camry" value={form.car_model} onChange={(e) => setForm({ ...form, car_model: e.target.value })} required />
+              <Input id="model" placeholder="Camry" maxLength={50} value={form.car_model} onChange={(e) => setForm({ ...form, car_model: e.target.value })} required />
             </div>
           </div>
           <div>
             <Label htmlFor="plate">License plate</Label>
-            <Input id="plate" placeholder="ABC 123" value={form.car_plate} onChange={(e) => setForm({ ...form, car_plate: e.target.value })} required />
+            <Input id="plate" placeholder="ABC 123" maxLength={15} value={form.car_plate} onChange={(e) => setForm({ ...form, car_plate: e.target.value })} required />
           </div>
           <fieldset className="rounded-xl border border-border p-3">
             <legend className="px-1 text-sm font-medium">Choose your slot</legend>

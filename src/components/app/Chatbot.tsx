@@ -58,7 +58,7 @@ export const Chatbot = ({ onBookingReady }: { onBookingReady: (draft: BookingPre
     recognition.maxAlternatives = 1;
 
     recognition.onresult = async (event: any) => {
-      const transcript = event.results?.[0]?.[0]?.transcript?.trim();
+      const transcript = event.results?.[0]?.[0]?.transcript?.trim().slice(0, 200);
       // handleUserMessage adds the "user" message itself — adding it here too
       // would show every voice message twice.
       if (transcript) await handleUserMessage(transcript);
@@ -160,7 +160,10 @@ export const Chatbot = ({ onBookingReady }: { onBookingReady: (draft: BookingPre
     return text.includes("payment") || text.includes("payments") || text.includes("paying") || text.includes("making payments");
   };
 
-  const handleUserMessage = async (text: string) => {
+  const handleUserMessage = async (rawText: string) => {
+    // Defence in depth: cap message length here too, regardless of which
+    // input (typed or voice) the text came from.
+    const text = rawText.slice(0, 200);
     const normalized = text.trim().toLowerCase();
     addMessage({ from: "user", text });
 
@@ -331,6 +334,7 @@ export const Chatbot = ({ onBookingReady }: { onBookingReady: (draft: BookingPre
               value={input}
               onChange={(event) => setInput(event.target.value)}
               placeholder="Type a message..."
+              maxLength={200}
               className="flex-1"
             />
             <Button type="submit" size="sm" className="px-3">

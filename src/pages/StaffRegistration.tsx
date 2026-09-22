@@ -28,6 +28,7 @@ const StaffRegistration = () => {
     if (!invitationId) return toast.error("This invitation link is incomplete.");
     if (!/^\d{6}$/.test(code)) return showFieldError("Enter the six-digit invitation code.", "invite-code");
     if (password.length < 6) return showFieldError("Password must contain at least six characters.", "staff-password");
+    if (password.length > 72) return showFieldError("Password must be 72 characters or fewer.", "staff-password");
     if (password !== confirmPassword) return showFieldError("Passwords do not match.", "staff-password-confirm");
 
     setLoading(true);
@@ -64,8 +65,8 @@ const StaffRegistration = () => {
           {email && <p className="mt-5 rounded-xl border border-border bg-muted/30 p-3 text-sm">Invitation for <strong>{email}</strong></p>}
           <form onSubmit={register} className="mt-6 space-y-4">
             <div><Label htmlFor="invite-code">Invitation code</Label><Input id="invite-code" inputMode="numeric" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} required /></div>
-            <div><Label htmlFor="staff-password">Create password</Label><Input id="staff-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></div>
-            <div><Label htmlFor="staff-password-confirm">Confirm password</Label><Input id="staff-password-confirm" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required /></div>
+            <div><Label htmlFor="staff-password">Create password</Label><Input id="staff-password" type="password" maxLength={72} value={password} onChange={(event) => setPassword(event.target.value)} required /></div>
+            <div><Label htmlFor="staff-password-confirm">Confirm password</Label><Input id="staff-password-confirm" type="password" maxLength={72} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required /></div>
             <Button type="submit" variant="hero" size="lg" className="w-full" disabled={loading || !email}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />} Activate staff account
             </Button>

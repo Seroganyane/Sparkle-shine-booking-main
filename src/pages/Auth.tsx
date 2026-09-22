@@ -226,11 +226,11 @@ const Auth = () => {
                   <>
                     <div>
                       <Label htmlFor="name">Full name</Label>
-                      <Input id="name" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required />
+                      <Input id="name" maxLength={80} value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required />
                     </div>
                     <div>
                       <Label htmlFor="phone">Phone number</Label>
-                      <Input id="phone" type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
+                      <Input id="phone" type="tel" maxLength={20} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
                     </div>
                   </>
                 )}
@@ -243,11 +243,11 @@ const Auth = () => {
                 )}
                 <div>
                   <Label htmlFor="email">{mode === "signin" ? "Username or email address" : "Email address"}</Label>
-                  <Input id="email" type={mode === "signin" ? "text" : "email"} autoComplete="username" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+                  <Input id="email" type={mode === "signin" ? "text" : "email"} autoComplete="username" maxLength={255} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
                 </div>
                 <div>
                   <Label htmlFor="password">Password</Label>
-                  <Input id="password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
+                  <Input id="password" type="password" maxLength={72} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
                 </div>
                 {mode === "signin" && (
                   <div className="flex justify-end">

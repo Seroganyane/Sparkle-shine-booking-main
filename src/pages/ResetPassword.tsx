@@ -76,7 +76,7 @@ const ResetPassword = () => {
             </div>
             <div>
               <Label htmlFor="confirm-password">Confirm new password</Label>
-              <Input id="confirm-password" type="password" autoComplete="new-password" required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+              <Input id="confirm-password" type="password" autoComplete="new-password" maxLength={72} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
             </div>
             {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
             <Button type="submit" variant="hero" className="w-full" disabled={saving}>{saving ? "Updating..." : "Update password"}</Button>

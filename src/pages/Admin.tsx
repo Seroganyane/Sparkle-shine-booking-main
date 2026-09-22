@@ -241,8 +241,8 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
   const restockProduct = async (productId: string) => {
     const rawValue = stockDrafts[productId];
     const nextStock = Number(rawValue);
-    if (!rawValue || Number.isNaN(nextStock) || nextStock < 0) {
-      toast.error("Enter a valid stock count (0 or more).");
+    if (!rawValue || Number.isNaN(nextStock) || !Number.isInteger(nextStock) || nextStock < 0 || nextStock > 100000) {
+      toast.error("Enter a whole number between 0 and 100,000.");
       return;
     }
     const { error } = await supabase
@@ -536,6 +536,7 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
                     <Input
                       type="number"
                       min={0}
+                      max={100000}
                       className="h-9"
                       value={stockDrafts[product.id] ?? String(stock)}
                       onChange={(e) => setStockDrafts((prev) => ({ ...prev, [product.id]: e.target.value }))}
@@ -699,7 +700,7 @@ const StatCard = ({ icon: Icon, label, value }: { icon: LucideIcon; label: strin
 );
 
 const NotifyDialog = ({ booking, onClose }: { booking: Booking; onClose: () => void }) => {
-  const [title, setTitle] = useState("It's time! ðŸš—");
+  const [title, setTitle] = useState("It's time! 🚗");
   const [message, setMessage] = useState(`Hi ${booking.profile?.full_name?.split(" ")[0] || ""}, please bring your ${booking.car_make} ${booking.car_model} now — your wash bay is ready.`);
   const [notifyVia, setNotifyVia] = useState<"app" | "email" | "sms">("app");
   const [loading, setLoading] = useState(false);
@@ -766,8 +767,8 @@ const NotifyDialog = ({ booking, onClose }: { booking: Booking; onClose: () => v
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="app">ðŸ“± In-app notification</SelectItem>
-                <SelectItem value="email">ðŸ“§ Email to {booking.profile?.email}</SelectItem>
+                <SelectItem value="app">📱 In-app notification</SelectItem>
+                <SelectItem value="email">📧 Email to {booking.profile?.email}</SelectItem>
                 <SelectItem value="sms">Text message to {booking.profile?.phone}</SelectItem>
               </SelectContent>
             </Select>
@@ -808,7 +809,7 @@ const GrantRewardDialog = ({ profiles, onDone }: { profiles: Profile[]; onDone: 
     if (!error) {
       await supabase.from("notifications").insert({
         user_id: userId,
-        title: "ðŸŽ Free wash granted!",
+        title: "🎁 Free wash granted!",
         message: `You've been awarded ${amount} free car wash${amount > 1 ? "es" : ""} by AquaLux. Enjoy!`,
         type: "reward",
       });
@@ -909,20 +910,20 @@ const RegisterEmployeeDialog = ({ onDone }: { onDone: () => void }) => {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label>First name</Label>
-            <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="John" />
+            <Input maxLength={80} value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="John" />
           </div>
           <div>
             <Label>Surname</Label>
-            <Input value={surname} onChange={(e) => setSurname(e.target.value)} placeholder="Doe" />
+            <Input maxLength={80} value={surname} onChange={(e) => setSurname(e.target.value)} placeholder="Doe" />
           </div>
         </div>
         <div>
           <Label>Email</Label>
-          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="john@example.com" />
+          <Input type="email" maxLength={255} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="john@example.com" />
         </div>
         <div>
           <Label>Phone</Label>
-          <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+27..." />
+          <Input maxLength={20} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+27..." />
         </div>
         <div>
           <Label htmlFor="staff-id-number">Identity number</Label>
