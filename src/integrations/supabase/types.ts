@@ -650,6 +650,10 @@ export type Database = {
         Args: { _assignment_id: string }
         Returns: undefined
       }
+      admin_assign_employee: {
+        Args: { _booking_id: string; _employee_id: string }
+        Returns: undefined
+      }
       approve_staff_leave_request: {
         Args: { _covering_employee_id?: string; _request_id: string }
         Returns: string

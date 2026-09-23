@@ -15,6 +15,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getPackage } from "@/lib/packages";
+import { plateTextMatches, stripPlate } from "@/lib/plateMatch";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -266,14 +267,10 @@ const Employee = () => {
     try {
       const { recognize } = await import("tesseract.js");
       const result = await recognize(photo, "eng");
-      const expectedPlate = booking?.car_plate.replace(/[^a-z0-9]/gi, "").toUpperCase() ?? "";
-      const scannedLines = result.data.text
-        .split(/\r?\n/)
-        .map((line) => line.replace(/[^a-z0-9]/gi, "").toUpperCase())
-        .filter(Boolean);
-      const scannedPlate = scannedLines.find((line) => line === expectedPlate);
+      const scannedLines = result.data.text.split(/\r?\n/).map(stripPlate).filter(Boolean);
+      const matched = plateTextMatches(result.data.text, booking?.car_plate ?? "");
 
-      if (!scannedPlate) {
+      if (!matched) {
         setMismatchDetected(true);
         setMismatchPlateGuess(scannedLines[0] ?? "");
         setScanMessage(`The scanned plate does not match ${booking?.car_plate}. Do not start the wash.`);
@@ -283,7 +280,7 @@ const Employee = () => {
 
       const { error } = await supabase.rpc("verify_employee_vehicle", {
         _assignment_id: assignment.id,
-        _scanned_plate: scannedPlate,
+        _scanned_plate: booking!.car_plate,
       });
       if (error) throw error;
       setVehicleVerified(true);

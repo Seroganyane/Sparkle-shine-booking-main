@@ -331,33 +331,9 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
   const assignEmployee = async (booking: Booking, employeeId: string) => {
     if (!user) return;
 
-    const { data: employeeSlotData, error: employeeSlotError } = await supabase
-      .from("employee_slots")
-      .select("slot_number")
-      .eq("employee_id", employeeId)
-      .maybeSingle();
-
-    if (employeeSlotError) {
-      toast.error(employeeSlotError.message);
-      return;
-    }
-
-    const targetSlot = booking.slot_number ?? employeeSlotData?.slot_number ?? null;
-    if (!targetSlot) {
-      toast.error("This booking has no available slot to assign.");
-      return;
-    }
-
-    const { error } = await supabase.from("employee_assignments").insert({
-      booking_id: booking.id,
-      employee_id: employeeId,
-      assigned_by: user.id,
-      status: "active",
-    });
-
+    const { error } = await supabase.rpc("admin_assign_employee", { _booking_id: booking.id, _employee_id: employeeId });
     if (error) { toast.error(error.message); return; }
-    await supabase.from("bookings").update({ status: "in_progress", slot_number: targetSlot }).eq("id", booking.id);
-    toast.success(`Employee assigned to Wash Bay #${targetSlot}.`);
+    toast.success("Employee assigned.");
     load();
   };
 
