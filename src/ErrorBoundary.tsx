@@ -1,6 +1,13 @@
 import React from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 type State = { hasError: boolean; error?: Error };
+
+// Only one alert per page load, even if the fallback's "Reload" button
+// re-triggers the same crash — this file has no React state that survives
+// a crash-and-retry loop, so a module-level flag is what keeps this from
+// turning into a flood of identical emails.
+let hasReportedThisLoad = false;
 
 export default class ErrorBoundary extends React.Component<React.PropsWithChildren<{}>, State> {
   state: State = { hasError: false };
@@ -14,6 +21,18 @@ export default class ErrorBoundary extends React.Component<React.PropsWithChildr
     // only ever sees the friendly fallback below, never a raw stack trace.
     // eslint-disable-next-line no-console
     console.error("Uncaught error in component tree:", error, info);
+
+    if (hasReportedThisLoad) return;
+    hasReportedThisLoad = true;
+    void supabase.functions.invoke("send-admin-alert", {
+      body: {
+        subject: "Uncaught crash in the app",
+        message: `A page crashed for a visitor.\n\nError: ${error.message}\n\nURL: ${window.location.href}\n\nStack: ${error.stack ?? "(no stack trace)"}`,
+        severity: "critical",
+      },
+      // Best-effort — if email isn't configured yet, this silently no-ops
+      // rather than compounding the crash with a second failure.
+    }).catch(() => {});
   }
 
   render() {

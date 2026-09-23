@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { getPackage } from "@/lib/packages";
 import { products as productCatalog } from "@/lib/products";
 import { toast } from "sonner";
@@ -19,7 +20,7 @@ import { edgeFunctionError } from "@/lib/edgeFunctionError";
 import { ID_NUMBER_LENGTH, idNumberError, normalizeIdNumber } from "@/lib/idNumber";
 import { showFieldError } from "@/lib/fieldError";
 import {
-  ArrowDown, ArrowUp, Bell, Car, CheckCircle2, Gift, ListOrdered, Play, Send, Shield, Users, LucideIcon, UserPlus, ShoppingBag, TriangleAlert, PackageCheck, CalendarOff, RotateCcw, MessageSquareWarning
+  ArrowDown, ArrowUp, Bell, Car, CheckCircle2, Gift, ListOrdered, Play, Send, Shield, Users, LucideIcon, UserPlus, ShoppingBag, TriangleAlert, PackageCheck, CalendarOff, RotateCcw, MessageSquareWarning, Loader2
 } from "lucide-react";
 
 type Booking = Database['public']['Tables']['bookings']['Row'] & { profile?: Database['public']['Tables']['profiles']['Row'] };
@@ -46,6 +47,13 @@ interface ProductStock {
 type StaffLeave = Database['public']['Tables']['staff_leave']['Row'];
 type SystemReport = Database['public']['Tables']['system_reports']['Row'];
 type ReportSeverity = Database['public']['Enums']['system_report_severity'];
+type LeaveRequest = Database['public']['Tables']['staff_leave_requests']['Row'];
+
+const openLeaveDocument = async (path: string) => {
+  const { data, error } = await supabase.storage.from("leave-documents").createSignedUrl(path, 300);
+  if (error || !data?.signedUrl) { toast.error("Could not open that document."); return; }
+  window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+};
 
 const severityColors: Record<ReportSeverity, string> = {
   low: "border-muted-foreground/30 bg-muted text-muted-foreground",
@@ -94,9 +102,13 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
   const [leaveDialogEmployee, setLeaveDialogEmployee] = useState<Profile | null>(null);
   const [systemReports, setSystemReports] = useState<SystemReport[]>([]);
   const [reportIssueOpen, setReportIssueOpen] = useState(false);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [sickNotes, setSickNotes] = useState<StaffLeave[]>([]);
+  const [approveDialogRequest, setApproveDialogRequest] = useState<LeaveRequest | null>(null);
+  const [declineDialogRequest, setDeclineDialogRequest] = useState<LeaveRequest | null>(null);
 
   const load = useCallback(async () => {
-    const [{ data: b }, { data: p }, { data: roleRows }, { data: o }, { data: slots }, { data: stock }, { data: leave }, { data: reports }] = await Promise.all([
+    const [{ data: b }, { data: p }, { data: roleRows }, { data: o }, { data: slots }, { data: stock }, { data: leave }, { data: reports }, { data: requests }, { data: notes }] = await Promise.all([
       supabase.from("bookings").select("*").order("scheduled_at", { ascending: true }),
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("user_roles").select("user_id, role"),
@@ -105,6 +117,8 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
       supabase.from("products").select("*"),
       supabase.from("staff_leave").select("*").is("ended_at", null).order("started_at", { ascending: false }),
       supabase.from("system_reports").select("*").order("created_at", { ascending: false }).limit(50),
+      supabase.from("staff_leave_requests").select("*").eq("status", "pending").order("requested_at", { ascending: false }),
+      supabase.from("staff_leave").select("*").eq("sick_note_required", true).order("ended_at", { ascending: false }).limit(30),
     ]);
     // attach profile to each booking
     const map = new Map((p || []).map((x: Profile) => [x.id, x]));
@@ -141,6 +155,8 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
 
     setStaffLeave(leave || []);
     setSystemReports(reports || []);
+    setLeaveRequests(requests || []);
+    setSickNotes(notes || []);
 
     setLoadingScreen(false);
   }, []);
@@ -155,6 +171,7 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
       .on("postgres_changes", { event: "*", schema: "public", table: "products" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "staff_leave" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "system_reports" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "staff_leave_requests" }, load)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, (payload) => {
         const notification = payload.new as Database["public"]["Tables"]["notifications"]["Row"];
         toast.success(notification.title, { description: notification.message });
@@ -384,12 +401,34 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
     toast.success("Reported to the System Administrator.");
     setReportIssueOpen(false);
     load();
+    // Email is a bonus channel on top of the in-app report above, which has
+    // already succeeded — a failure here shouldn't look like the report failed.
+    const { error: emailError } = await supabase.functions.invoke("send-admin-alert", {
+      body: { subject: title, message: description, severity },
+    });
+    if (emailError) console.error("Could not email the system administrator:", emailError.message);
   };
 
   const resolveSystemReport = async (reportId: string) => {
     const { error } = await supabase.rpc("resolve_system_report", { _report_id: reportId });
     if (error) { toast.error(error.message); return; }
     toast.success("Marked as resolved.");
+    load();
+  };
+
+  const approveLeaveRequest = async (requestId: string, coveringEmployeeId: string | null) => {
+    const { error } = await supabase.rpc("approve_staff_leave_request", { _request_id: requestId, _covering_employee_id: coveringEmployeeId });
+    if (error) { toast.error(error.message); return; }
+    toast.success(coveringEmployeeId ? "Leave approved — bay handed to the covering staff member." : "Leave approved. Assign a cover when someone is available.");
+    setApproveDialogRequest(null);
+    load();
+  };
+
+  const declineLeaveRequest = async (requestId: string, reason: string) => {
+    const { error } = await supabase.rpc("decline_staff_leave_request", { _request_id: requestId, _decision_notes: reason });
+    if (error) { toast.error(error.message); return; }
+    toast.success("Leave request declined.");
+    setDeclineDialogRequest(null);
     load();
   };
 
@@ -575,6 +614,65 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
           )}
         </section>}
 
+        {view === "employees" && leaveRequests.length > 0 && <section className="mb-8 rounded-2xl border border-primary/30 bg-primary/5 p-5 shadow-card">
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 font-display text-xl font-semibold"><CalendarOff className="h-5 w-5 text-primary" /> Leave requests</h2>
+            <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary">{leaveRequests.length} pending</Badge>
+          </div>
+          <div className="space-y-3">
+            {leaveRequests.map((request) => {
+              const employee = profiles.find((p) => p.id === request.employee_id);
+              return (
+                <div key={request.id} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 md:flex-row md:items-center md:justify-between">
+                  <HoverCard openDelay={150} closeDelay={100}>
+                    <HoverCardTrigger asChild>
+                      <div className="cursor-default">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="font-display text-lg font-semibold">{employee?.full_name || employee?.email || "Unknown staff member"}</div>
+                          <Badge variant="outline" className="capitalize">{request.leave_type}</Badge>
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {new Date(request.start_date).toLocaleDateString()} – {new Date(request.end_date).toLocaleDateString()} ({request.days_count} day{request.days_count === 1 ? "" : "s"}) · Requested {new Date(request.requested_at).toLocaleString()}
+                        </div>
+                        <div className="mt-1 text-xs font-medium text-primary underline decoration-dotted">Hover to view the full request</div>
+                      </div>
+                    </HoverCardTrigger>
+                    <HoverCardContent side="top" align="start" className="w-80">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <div className="font-display font-semibold">{employee?.full_name || employee?.email || "Unknown staff member"}</div>
+                        <Badge variant="outline" className="capitalize">{request.leave_type} leave</Badge>
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {new Date(request.start_date).toLocaleDateString()} – {new Date(request.end_date).toLocaleDateString()} · {request.days_count} day{request.days_count === 1 ? "" : "s"}
+                      </div>
+                      <p className="mt-3 text-sm">"{request.reason}"</p>
+                      {request.attachment_path ? (
+                        <button
+                          type="button"
+                          className="mt-3 text-xs font-medium text-primary underline"
+                          onClick={() => openLeaveDocument(request.attachment_path!)}
+                        >
+                          View attached document
+                        </button>
+                      ) : (
+                        <p className="mt-3 text-xs text-muted-foreground">No document attached.</p>
+                      )}
+                    </HoverCardContent>
+                  </HoverCard>
+                  <div className="flex gap-2">
+                    <Button variant="hero" size="sm" onClick={() => setApproveDialogRequest(request)}>
+                      <CheckCircle2 className="h-4 w-4" /> Approve
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setDeclineDialogRequest(request)}>
+                      Decline
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>}
+
         {view === "employees" && staffLeave.length > 0 && <section className="mb-8 rounded-2xl border border-warning/30 bg-warning/5 p-5 shadow-card">
           <div className="mb-4 flex items-center justify-between gap-2">
             <h2 className="flex items-center gap-2 font-display text-xl font-semibold"><CalendarOff className="h-5 w-5 text-warning" /> Staff on leave</h2>
@@ -614,6 +712,39 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
           </div>
         </section>}
 
+        {view === "employees" && sickNotes.length > 0 && <section className="mb-8 rounded-2xl border border-border bg-gradient-card p-5 shadow-card">
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 font-display text-xl font-semibold"><TriangleAlert className="h-5 w-5 text-destructive" /> Sick notes</h2>
+            {sickNotes.some((n) => !n.sick_note_path) && (
+              <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">
+                {sickNotes.filter((n) => !n.sick_note_path).length} outstanding
+              </Badge>
+            )}
+          </div>
+          <div className="space-y-3">
+            {sickNotes.map((note) => {
+              const employee = profiles.find((p) => p.id === note.employee_id);
+              return (
+                <div key={note.id} className="flex flex-col gap-2 rounded-xl border border-border p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="font-display text-lg font-semibold">{employee?.full_name || employee?.email || "Unknown staff member"}</div>
+                    <div className="text-sm text-muted-foreground">
+                      Leave {note.start_date && new Date(note.start_date).toLocaleDateString()} – {note.end_date && new Date(note.end_date).toLocaleDateString()}, ended {note.ended_at && new Date(note.ended_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                  {note.sick_note_path ? (
+                    <button type="button" className="text-sm font-medium text-primary underline" onClick={() => openLeaveDocument(note.sick_note_path!)}>
+                      View sick note
+                    </button>
+                  ) : (
+                    <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">Not submitted yet</Badge>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>}
+
         {leaveDialogEmployee && (
           <StaffLeaveDialog
             employee={leaveDialogEmployee}
@@ -621,6 +752,26 @@ const Admin = ({ view = "overview" }: { view?: AdminView }) => {
             availableForCover={availableForCover}
             onClose={() => setLeaveDialogEmployee(null)}
             onSubmit={startLeave}
+          />
+        )}
+
+        {approveDialogRequest && (
+          <ApproveLeaveRequestDialog
+            request={approveDialogRequest}
+            employee={profiles.find((p) => p.id === approveDialogRequest.employee_id)}
+            slotNumber={employeeSlots[approveDialogRequest.employee_id]}
+            availableForCover={availableForCover}
+            onClose={() => setApproveDialogRequest(null)}
+            onApprove={approveLeaveRequest}
+          />
+        )}
+
+        {declineDialogRequest && (
+          <DeclineLeaveRequestDialog
+            request={declineDialogRequest}
+            employee={profiles.find((p) => p.id === declineDialogRequest.employee_id)}
+            onClose={() => setDeclineDialogRequest(null)}
+            onDecline={declineLeaveRequest}
           />
         )}
 
@@ -1034,6 +1185,131 @@ const StaffLeaveDialog = ({
           </div>
           <Button variant="hero" className="w-full" onClick={submit} disabled={loading}>
             <CalendarOff className="h-4 w-4" /> Start leave
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const ApproveLeaveRequestDialog = ({
+  request, employee, slotNumber, availableForCover, onClose, onApprove,
+}: {
+  request: LeaveRequest;
+  employee: Profile | undefined;
+  slotNumber: number | undefined;
+  availableForCover: Profile[];
+  onClose: () => void;
+  onApprove: (requestId: string, coveringEmployeeId: string | null) => Promise<void>;
+}) => {
+  const [coveringEmployeeId, setCoveringEmployeeId] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    setLoading(true);
+    try {
+      await onApprove(request.id, coveringEmployeeId || null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="font-display">Approve leave for {employee?.full_name || employee?.email || "this staff member"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border bg-muted/30 p-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <Badge variant="outline" className="capitalize">{request.leave_type} leave</Badge>
+              <span className="text-xs text-muted-foreground">{request.days_count} day{request.days_count === 1 ? "" : "s"}</span>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {new Date(request.start_date).toLocaleDateString()} – {new Date(request.end_date).toLocaleDateString()}
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">"{request.reason}"</p>
+            {request.attachment_path ? (
+              <button type="button" className="mt-2 text-xs font-medium text-primary underline" onClick={() => openLeaveDocument(request.attachment_path!)}>
+                View attached document
+              </button>
+            ) : (
+              <p className="mt-2 text-xs text-muted-foreground">No document attached.</p>
+            )}
+          </div>
+          <div>
+            <Label>Cover for Wash Bay #{slotNumber}</Label>
+            <Select value={coveringEmployeeId} onValueChange={setCoveringEmployeeId}>
+              <SelectTrigger><SelectValue placeholder={availableForCover.length === 0 ? "No staff available right now" : "Choose a staff member (optional)"} /></SelectTrigger>
+              <SelectContent>
+                {availableForCover.map((e) => (
+                  <SelectItem key={e.id} value={e.id}>{e.full_name || e.email || "Unnamed staff member"}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {availableForCover.length === 0 && (
+              <p className="mt-1 text-xs text-muted-foreground">No staff are currently free — you can assign one later from "Staff on leave".</p>
+            )}
+          </div>
+          <Button variant="hero" className="w-full" onClick={submit} disabled={loading}>
+            <CheckCircle2 className="h-4 w-4" /> Approve leave
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const DeclineLeaveRequestDialog = ({
+  request, employee, onClose, onDecline,
+}: {
+  request: LeaveRequest;
+  employee: Profile | undefined;
+  onClose: () => void;
+  onDecline: (requestId: string, reason: string) => Promise<void>;
+}) => {
+  const [reason, setReason] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    if (!reason.trim()) {
+      toast.error("Give a reason for declining this leave request.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await onDecline(request.id, reason.trim());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="font-display">Decline leave for {employee?.full_name || employee?.email || "this staff member"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="rounded-xl border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+            {request.leave_type} leave, {new Date(request.start_date).toLocaleDateString()} – {new Date(request.end_date).toLocaleDateString()} · "{request.reason}"
+          </p>
+          <div>
+            <Label htmlFor="decline-reason">Reason for declining</Label>
+            <Textarea
+              id="decline-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              maxLength={300}
+              placeholder="e.g. No cover available for those dates — please pick a later week"
+              required
+            />
+            <p className="mt-1 text-xs text-muted-foreground">This is sent to {employee?.full_name || "the staff member"} so they know why.</p>
+          </div>
+          <Button variant="destructive" className="w-full" onClick={submit} disabled={loading}>
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Decline leave request
           </Button>
         </div>
       </DialogContent>

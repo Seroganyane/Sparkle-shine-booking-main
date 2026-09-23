@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, Car, CheckCircle2, Clock3, Loader2, RotateCcw, ScanLine, ShieldCheck, ThumbsUp, UserRound, Badge as BadgeIcon, Bell, TriangleAlert } from "lucide-react";
+import { Camera, Car, CheckCircle2, Clock3, Loader2, RotateCcw, ScanLine, ShieldCheck, ThumbsUp, UserRound, Badge as BadgeIcon, Bell, TriangleAlert, CalendarOff, CalendarIcon } from "lucide-react";
+import { format } from "date-fns";
 import { Navbar } from "@/components/app/Navbar";
 import { AppSidebar } from "@/components/app/AppSidebar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getPackage } from "@/lib/packages";
@@ -14,6 +22,26 @@ type Booking = Database["public"]["Tables"]["bookings"]["Row"];
 type Notif = Database["public"]["Tables"]["notifications"]["Row"];
 type Assignment = Database["public"]["Tables"]["employee_assignments"]["Row"] & { booking: Booking | null };
 type StaffLeave = Database["public"]["Tables"]["staff_leave"]["Row"];
+type LeaveRequest = Database["public"]["Tables"]["staff_leave_requests"]["Row"];
+type LeaveType = Database["public"]["Enums"]["staff_leave_type"];
+
+const MAX_LEAVE_DOC_BYTES = 8 * 1024 * 1024;
+const LEAVE_DOC_ACCEPT = "application/pdf,image/*";
+
+const uploadLeaveDocument = async (userId: string, file: File): Promise<string> => {
+  if (file.size > MAX_LEAVE_DOC_BYTES) throw new Error("That file is too large — attach something under 8MB.");
+  const safeName = file.name.replace(/[^a-zA-Z0-9_.-]/g, "_");
+  const path = `${userId}/${Date.now()}-${safeName}`;
+  const { error } = await supabase.storage.from("leave-documents").upload(path, file);
+  if (error) throw error;
+  return path;
+};
+
+const openLeaveDocument = async (path: string) => {
+  const { data, error } = await supabase.storage.from("leave-documents").createSignedUrl(path, 300);
+  if (error || !data?.signedUrl) { toast.error("Could not open that document."); return; }
+  window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+};
 
 const Employee = () => {
   const { user } = useAuth();
@@ -21,6 +49,17 @@ const Employee = () => {
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [permanentSlot, setPermanentSlot] = useState<number | null>(null);
   const [myLeave, setMyLeave] = useState<(StaffLeave & { otherName?: string }) | null>(null);
+  const [myLeaveRequest, setMyLeaveRequest] = useState<LeaveRequest | null>(null);
+  const [leaveRequestOpen, setLeaveRequestOpen] = useState(false);
+  const [leaveReason, setLeaveReason] = useState("");
+  const [leaveType, setLeaveType] = useState<LeaveType>("annual");
+  const [leaveStartDate, setLeaveStartDate] = useState("");
+  const [leaveEndDate, setLeaveEndDate] = useState("");
+  const [leaveAttachment, setLeaveAttachment] = useState<File | null>(null);
+  const [requestingLeave, setRequestingLeave] = useState(false);
+  const [sickNotesOwed, setSickNotesOwed] = useState<StaffLeave[]>([]);
+  const [sickNoteFiles, setSickNoteFiles] = useState<Record<string, File | null>>({});
+  const [submittingSickNote, setSubmittingSickNote] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [finishing, setFinishing] = useState(false);
   const [accepting, setAccepting] = useState(false);
@@ -96,15 +135,95 @@ const Employee = () => {
     setMyLeave({ ...data, otherName });
   }, [user]);
 
+  const loadMyLeaveRequest = useCallback(async () => {
+    if (!user) return;
+    const { data, error } = await supabase
+      .from("staff_leave_requests")
+      .select("*")
+      .eq("employee_id", user.id)
+      .order("requested_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) { console.error("Could not load leave request:", error); return; }
+    setMyLeaveRequest(data?.status === "pending" ? data : null);
+  }, [user]);
+
+  const loadSickNotesOwed = useCallback(async () => {
+    if (!user) return;
+    const { data, error } = await supabase
+      .from("staff_leave")
+      .select("*")
+      .eq("employee_id", user.id)
+      .eq("sick_note_required", true)
+      .is("sick_note_path", null);
+    if (error) { console.error("Could not load sick note status:", error); return; }
+    setSickNotesOwed(data ?? []);
+  }, [user]);
+
+  const leaveDaysCount = leaveStartDate && leaveEndDate && leaveEndDate >= leaveStartDate
+    ? Math.round((new Date(leaveEndDate).getTime() - new Date(leaveStartDate).getTime()) / 86400000) + 1
+    : null;
+
+  const submitLeaveRequest = async () => {
+    if (!leaveReason.trim()) { toast.error("Tell your admin why you need leave."); return; }
+    if (!leaveStartDate || !leaveEndDate) { toast.error("Choose a start and end date."); return; }
+    if (leaveEndDate < leaveStartDate) { toast.error("The end date cannot be before the start date."); return; }
+    setRequestingLeave(true);
+    try {
+      const attachmentPath = leaveAttachment ? await uploadLeaveDocument(user!.id, leaveAttachment) : null;
+      const { error } = await supabase.rpc("request_staff_leave", {
+        _reason: leaveReason.trim(),
+        _leave_type: leaveType,
+        _start_date: leaveStartDate,
+        _end_date: leaveEndDate,
+        _attachment_path: attachmentPath,
+      });
+      if (error) throw error;
+      toast.success("Leave request sent to your admin.");
+      setLeaveRequestOpen(false);
+      setLeaveReason("");
+      setLeaveStartDate("");
+      setLeaveEndDate("");
+      setLeaveAttachment(null);
+      setLeaveType("annual");
+      void loadMyLeaveRequest();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not send your leave request.");
+    } finally {
+      setRequestingLeave(false);
+    }
+  };
+
+  const submitSickNote = async (leaveId: string) => {
+    const file = sickNoteFiles[leaveId];
+    if (!file) { toast.error("Attach your sick note first."); return; }
+    setSubmittingSickNote(leaveId);
+    try {
+      const path = await uploadLeaveDocument(user!.id, file);
+      const { error } = await supabase.rpc("submit_sick_note", { _leave_id: leaveId, _file_path: path });
+      if (error) throw error;
+      toast.success("Sick note submitted.");
+      setSickNoteFiles((prev) => ({ ...prev, [leaveId]: null }));
+      void loadSickNotesOwed();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not submit your sick note.");
+    } finally {
+      setSubmittingSickNote(null);
+    }
+  };
+
   useEffect(() => {
     if (!user) return;
     void loadSlot();
     void load();
     void loadNotifs();
     void loadMyLeave();
+    void loadMyLeaveRequest();
+    void loadSickNotesOwed();
     const channel = supabase.channel("employee-work")
       .on("postgres_changes", { event: "*", schema: "public", table: "employee_assignments", filter: `employee_id=eq.${user.id}` }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "staff_leave" }, () => { void loadSlot(); void loadMyLeave(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "staff_leave" }, () => { void loadSlot(); void loadMyLeave(); void loadSickNotesOwed(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "staff_leave_requests", filter: `employee_id=eq.${user.id}` }, loadMyLeaveRequest)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, (payload) => {
         const notification = payload.new as Notif;
         toast.success(notification.title, { description: notification.message });
@@ -112,7 +231,7 @@ const Employee = () => {
       })
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
-  }, [load, loadSlot, loadNotifs, loadMyLeave, user]);
+  }, [load, loadSlot, loadNotifs, loadMyLeave, loadMyLeaveRequest, loadSickNotesOwed, user]);
 
   useEffect(() => {
     setVehiclePhoto((currentPhoto) => {
@@ -234,10 +353,139 @@ const Employee = () => {
             <h1 className="flex items-center gap-2 font-display text-3xl font-bold md:text-4xl"><UserRound className="h-8 w-8 text-primary" /> My wash slot</h1>
             <p className="mt-1 text-muted-foreground">See your assigned vehicle and tell your supervisor when you are ready again.</p>
           </div>
-          <Badge variant="outline" className={assignment ? "border-warning/30 bg-warning/10 px-3 py-1 text-warning" : "border-success/30 bg-success/10 px-3 py-1 text-success"}>
-            {assignment ? "Busy – wash in progress" : "Available for assignment"}
-          </Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className={assignment ? "border-warning/30 bg-warning/10 px-3 py-1 text-warning" : "border-success/30 bg-success/10 px-3 py-1 text-success"}>
+              {assignment ? "Busy – wash in progress" : "Available for assignment"}
+            </Badge>
+            {myLeave?.employee_id !== user?.id && !myLeaveRequest && sickNotesOwed.length === 0 && (
+              <Dialog open={leaveRequestOpen} onOpenChange={setLeaveRequestOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <CalendarOff className="h-4 w-4" /> Apply for leave
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle className="font-display">Apply for leave</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <p className="text-sm text-muted-foreground">Your admin will review this and, if approved, hand your bay to a colleague while you're away.</p>
+                    <div>
+                      <Label>Leave type</Label>
+                      <Select value={leaveType} onValueChange={(v: LeaveType) => setLeaveType(v)}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="sick">Sick leave</SelectItem>
+                          <SelectItem value="annual">Annual leave</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="leave-start">Start date</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button id="leave-start" type="button" variant="outline" className="w-full justify-start font-normal">
+                              <CalendarIcon className="h-4 w-4" />
+                              {leaveStartDate ? format(new Date(`${leaveStartDate}T00:00:00`), "d MMM yyyy") : "Pick a date"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0">
+                            <Calendar
+                              mode="single"
+                              selected={leaveStartDate ? new Date(`${leaveStartDate}T00:00:00`) : undefined}
+                              onSelect={(date) => {
+                                if (!date) return;
+                                const iso = format(date, "yyyy-MM-dd");
+                                setLeaveStartDate(iso);
+                                if (leaveEndDate && leaveEndDate < iso) setLeaveEndDate("");
+                              }}
+                              disabled={{ before: new Date(new Date().setHours(0, 0, 0, 0)) }}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                      <div>
+                        <Label htmlFor="leave-end">End date</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button id="leave-end" type="button" variant="outline" className="w-full justify-start font-normal" disabled={!leaveStartDate}>
+                              <CalendarIcon className="h-4 w-4" />
+                              {leaveEndDate ? format(new Date(`${leaveEndDate}T00:00:00`), "d MMM yyyy") : "Pick a date"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0">
+                            <Calendar
+                              mode="single"
+                              selected={leaveEndDate ? new Date(`${leaveEndDate}T00:00:00`) : undefined}
+                              onSelect={(date) => date && setLeaveEndDate(format(date, "yyyy-MM-dd"))}
+                              disabled={{ before: leaveStartDate ? new Date(`${leaveStartDate}T00:00:00`) : new Date(new Date().setHours(0, 0, 0, 0)) }}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Number of days</Label>
+                      <div className="flex h-10 items-center rounded-md border border-input bg-muted/30 px-3 text-sm">
+                        {leaveDaysCount !== null ? `${leaveDaysCount} day${leaveDaysCount === 1 ? "" : "s"}` : "Select both dates"}
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="leave-reason">Reason</Label>
+                      <Textarea id="leave-reason" value={leaveReason} onChange={(e) => setLeaveReason(e.target.value)} rows={3} maxLength={300} placeholder="e.g. Feeling unwell, need to rest" />
+                    </div>
+                    <div>
+                      <Label htmlFor="leave-attachment">Supporting document (optional)</Label>
+                      <Input id="leave-attachment" type="file" accept={LEAVE_DOC_ACCEPT} onChange={(e) => setLeaveAttachment(e.target.files?.[0] ?? null)} />
+                      <p className="mt-1 text-xs text-muted-foreground">PDF or photo, up to 8MB — e.g. a doctor's note if you already have one.</p>
+                    </div>
+                    <Button variant="hero" className="w-full" onClick={submitLeaveRequest} disabled={requestingLeave}>
+                      {requestingLeave ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarOff className="h-4 w-4" />} Send request
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+          </div>
         </div>
+
+        {myLeaveRequest && (
+          <div className="mb-6 rounded-2xl border border-primary/30 bg-primary/10 p-4 md:p-6">
+            <p className="text-sm font-medium text-primary">Leave request pending</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {myLeaveRequest.leave_type} leave, {new Date(myLeaveRequest.start_date).toLocaleDateString()} – {new Date(myLeaveRequest.end_date).toLocaleDateString()}
+              {" "}({myLeaveRequest.days_count} day{myLeaveRequest.days_count === 1 ? "" : "s"}) · Waiting for your admin to review: "{myLeaveRequest.reason}"
+            </p>
+            {myLeaveRequest.attachment_path && (
+              <button type="button" className="mt-2 text-xs font-medium text-primary underline" onClick={() => openLeaveDocument(myLeaveRequest.attachment_path!)}>
+                View attached document
+              </button>
+            )}
+          </div>
+        )}
+
+        {sickNotesOwed.map((leave) => (
+          <div key={leave.id} className="mb-6 rounded-2xl border border-destructive/30 bg-destructive/10 p-4 md:p-6">
+            <p className="flex items-center gap-2 text-sm font-medium text-destructive"><TriangleAlert className="h-4 w-4" /> Sick note required</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Please submit your sick note for your leave from {leave.start_date && new Date(leave.start_date).toLocaleDateString()} to {leave.end_date && new Date(leave.end_date).toLocaleDateString()} before applying for more leave.
+            </p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Input
+                type="file"
+                accept={LEAVE_DOC_ACCEPT}
+                onChange={(e) => setSickNoteFiles((prev) => ({ ...prev, [leave.id]: e.target.files?.[0] ?? null }))}
+              />
+              <Button variant="hero" size="sm" onClick={() => submitSickNote(leave.id)} disabled={submittingSickNote === leave.id}>
+                {submittingSickNote === leave.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Submit sick note
+              </Button>
+            </div>
+          </div>
+        ))}
 
         {myLeave?.employee_id === user?.id && (
           <div className="mb-6 rounded-2xl border border-warning/30 bg-warning/10 p-4 md:p-6">

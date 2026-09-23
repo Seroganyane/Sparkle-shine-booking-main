@@ -464,39 +464,122 @@ export type Database = {
       }
       staff_leave: {
         Row: {
+          attachment_path: string | null
           covering_employee_id: string | null
           created_by: string
+          days_count: number | null
           employee_id: string
+          end_date: string | null
           ended_at: string | null
           ended_by: string | null
           id: string
+          leave_type: Database["public"]["Enums"]["staff_leave_type"]
           reason: string | null
+          sick_note_path: string | null
+          sick_note_required: boolean
+          sick_note_submitted_at: string | null
           slot_number: number
+          start_date: string | null
           started_at: string
         }
         Insert: {
+          attachment_path?: string | null
           covering_employee_id?: string | null
           created_by: string
+          days_count?: number | null
           employee_id: string
+          end_date?: string | null
           ended_at?: string | null
           ended_by?: string | null
           id?: string
+          leave_type?: Database["public"]["Enums"]["staff_leave_type"]
           reason?: string | null
+          sick_note_path?: string | null
+          sick_note_required?: boolean
+          sick_note_submitted_at?: string | null
           slot_number: number
+          start_date?: string | null
           started_at?: string
         }
         Update: {
+          attachment_path?: string | null
           covering_employee_id?: string | null
           created_by?: string
+          days_count?: number | null
           employee_id?: string
+          end_date?: string | null
           ended_at?: string | null
           ended_by?: string | null
           id?: string
+          leave_type?: Database["public"]["Enums"]["staff_leave_type"]
           reason?: string | null
+          sick_note_path?: string | null
+          sick_note_required?: boolean
+          sick_note_submitted_at?: string | null
           slot_number?: number
+          start_date?: string | null
           started_at?: string
         }
         Relationships: []
+      }
+      staff_leave_requests: {
+        Row: {
+          attachment_path: string | null
+          days_count: number | null
+          decided_at: string | null
+          decided_by: string | null
+          decision_notes: string | null
+          employee_id: string
+          end_date: string
+          id: string
+          leave_type: Database["public"]["Enums"]["staff_leave_type"]
+          reason: string
+          requested_at: string
+          resulting_leave_id: string | null
+          start_date: string
+          status: Database["public"]["Enums"]["staff_leave_request_status"]
+        }
+        Insert: {
+          attachment_path?: string | null
+          days_count?: number | null
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_notes?: string | null
+          employee_id: string
+          end_date: string
+          id?: string
+          leave_type: Database["public"]["Enums"]["staff_leave_type"]
+          reason: string
+          requested_at?: string
+          resulting_leave_id?: string | null
+          start_date: string
+          status?: Database["public"]["Enums"]["staff_leave_request_status"]
+        }
+        Update: {
+          attachment_path?: string | null
+          days_count?: number | null
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_notes?: string | null
+          employee_id?: string
+          end_date?: string
+          id?: string
+          leave_type?: Database["public"]["Enums"]["staff_leave_type"]
+          reason?: string
+          requested_at?: string
+          resulting_leave_id?: string | null
+          start_date?: string
+          status?: Database["public"]["Enums"]["staff_leave_request_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_leave_requests_resulting_leave_id_fkey"
+            columns: ["resulting_leave_id"]
+            isOneToOne: false
+            referencedRelation: "staff_leave"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       system_reports: {
         Row: {
@@ -567,6 +650,10 @@ export type Database = {
         Args: { _assignment_id: string }
         Returns: undefined
       }
+      approve_staff_leave_request: {
+        Args: { _covering_employee_id?: string; _request_id: string }
+        Returns: string
+      }
       assign_leave_cover: {
         Args: { _covering_employee_id: string; _leave_id: string }
         Returns: undefined
@@ -586,6 +673,10 @@ export type Database = {
       consume_staff_invitation: {
         Args: { _code_hash: string; _invitation_id: string }
         Returns: number
+      }
+      decline_staff_leave_request: {
+        Args: { _decision_notes: string; _request_id: string }
+        Returns: undefined
       }
       end_staff_leave: { Args: { _leave_id: string }; Returns: undefined }
       get_occupied_wash_slots: { Args: never; Returns: number[] }
@@ -620,17 +711,35 @@ export type Database = {
         Args: { _assignment_id: string; _scanned_plate: string }
         Returns: undefined
       }
+      request_staff_leave: {
+        Args: {
+          _attachment_path?: string
+          _end_date: string
+          _leave_type: Database["public"]["Enums"]["staff_leave_type"]
+          _reason: string
+          _start_date: string
+        }
+        Returns: string
+      }
       resolve_system_report: {
         Args: { _report_id: string; _resolution_notes?: string }
         Returns: undefined
       }
       start_staff_leave: {
         Args: {
+          _attachment_path?: string
           _covering_employee_id?: string
           _employee_id: string
+          _end_date?: string
+          _leave_type?: Database["public"]["Enums"]["staff_leave_type"]
           _reason: string
+          _start_date?: string
         }
         Returns: string
+      }
+      submit_sick_note: {
+        Args: { _file_path: string; _leave_id: string }
+        Returns: undefined
       }
       username_is_available: { Args: { candidate: string }; Returns: boolean }
       verify_employee_vehicle: {
@@ -649,6 +758,8 @@ export type Database = {
         | "cancelled"
       employee_assignment_status: "active" | "completed"
       payment_status: "unpaid" | "paid" | "free"
+      staff_leave_request_status: "pending" | "approved" | "declined"
+      staff_leave_type: "sick" | "annual" | "other"
       system_report_severity: "low" | "medium" | "high" | "critical"
       system_report_status: "open" | "resolved"
       wash_package: "basic" | "premium" | "deluxe"
@@ -793,6 +904,8 @@ export const Constants = {
       ],
       employee_assignment_status: ["active", "completed"],
       payment_status: ["unpaid", "paid", "free"],
+      staff_leave_request_status: ["pending", "approved", "declined"],
+      staff_leave_type: ["sick", "annual", "other"],
       system_report_severity: ["low", "medium", "high", "critical"],
       system_report_status: ["open", "resolved"],
       wash_package: ["basic", "premium", "deluxe"],
