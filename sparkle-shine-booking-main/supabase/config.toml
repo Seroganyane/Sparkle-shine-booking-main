@@ -1,5 +1,10 @@
 project_id = "fionchfrrynrpvbuovcm"
 
+<<<<<<< HEAD
 [auth.email.template.invite]
 subject = "Your AquaLux staff invitation"
 content_path = "./supabase/templates/invite.html"
+=======
+[functions.username-signin]
+verify_jwt = false
+>>>>>>> 670074ddfd57f662a094f28b794239149a0fc44b

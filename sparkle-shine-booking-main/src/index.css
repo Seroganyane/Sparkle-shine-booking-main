@@ -38,6 +38,9 @@ All colors MUST be HSL.
 
     --border: 217 33% 18%;
     --input: 217 33% 16%;
+    --field: 218 35% 13%;
+    --field-inactive: 217 20% 18%;
+    --field-inactive-foreground: 215 16% 72%;
     --ring: 200 98% 55%;
 
     --radius: 0.875rem;
@@ -93,6 +96,9 @@ All colors MUST be HSL.
 
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
+    --field: 218 35% 13%;
+    --field-inactive: 217 20% 18%;
+    --field-inactive-foreground: 215 16% 72%;
     --ring: 212.7 26.8% 83.9%;
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
@@ -115,16 +121,37 @@ All colors MUST be HSL.
     font-family: 'Inter', system-ui, sans-serif;
   }
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Space Grotesk', system-ui, sans-serif;
+    font-family: 'Inter', system-ui, sans-serif;
+    text-align: left;
+  }
+  input, textarea, select, button {
+    font: inherit;
+  }
+  input, textarea, select {
+    text-align: left;
   }
 
   a {
     @apply text-primary transition-colors duration-200;
-    text-decoration: none;
   }
 
   a:hover {
-    @apply text-primary/80;
+    @apply text-primary-glow;
+  }
+
+  a:not([class]) {
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  a:focus-visible {
+    @apply rounded-sm outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: hsl(var(--muted-foreground));
+    opacity: 1;
   }
 }
 
@@ -152,4 +179,63 @@ button {
 button,
 [role='button'] {
   transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+@media print {
+  @page { margin: 12mm; }
+
+  html, body, #root, main, section, article {
+    width: auto !important;
+    min-width: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    color: #111 !important;
+    background: #fff !important;
+  }
+
+  * {
+    color: #111 !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    border-color: #bbb !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    animation: none !important;
+  }
+
+  header, nav, aside, button, [role='button'], .fixed, .absolute {
+    display: none !important;
+  }
+
+  main, .container {
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: none !important;
+  }
+
+  .grid {
+    display: block !important;
+  }
+
+  [class*='overflow-'] {
+    overflow: visible !important;
+  }
+
+  img {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  h1, h2, h3, h4, h5, h6, p, li {
+    overflow-wrap: anywhere;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    break-after: avoid;
+  }
+
+  .rounded-xl, .rounded-2xl, .rounded-3xl {
+    break-inside: avoid-page;
+  }
 }

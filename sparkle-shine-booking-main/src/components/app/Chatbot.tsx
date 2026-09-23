@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { getPackage, PACKAGES, PackageId } from "@/lib/packages";
 import { MessageSquare, Send, X, Mic, MicOff } from "lucide-react";
+import type { BookingPrefill } from "@/components/app/BookingDialog";
 
 type Message = { from: "bot" | "user"; text: string };
 
@@ -24,7 +25,7 @@ type BookingDraft = {
   package?: PackageId;
 };
 
-export const Chatbot = ({ freeWashes, onBooked }: { freeWashes: number; onBooked: () => void }) => {
+export const Chatbot = ({ onBookingReady }: { onBookingReady: (draft: BookingPrefill) => void }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [chatOpen, setChatOpen] = useState(false);
@@ -57,11 +58,10 @@ export const Chatbot = ({ freeWashes, onBooked }: { freeWashes: number; onBooked
     recognition.maxAlternatives = 1;
 
     recognition.onresult = async (event: any) => {
-      const transcript = event.results?.[0]?.[0]?.transcript?.trim();
-      if (transcript) {
-        addMessage({ from: "user", text: transcript });
-        await handleUserMessage(transcript);
-      }
+      const transcript = event.results?.[0]?.[0]?.transcript?.trim().slice(0, 200);
+      // handleUserMessage adds the "user" message itself — adding it here too
+      // would show every voice message twice.
+      if (transcript) await handleUserMessage(transcript);
       setListening(false);
     };
 
@@ -102,31 +102,16 @@ export const Chatbot = ({ freeWashes, onBooked }: { freeWashes: number; onBooked
   };
 
   const getAvailableSlots = async () => {
-    const { data } = await supabase
-      .from("bookings")
-      .select("slot_number,status")
-      .in("status", ["pending", "confirmed", "in_queue", "in_progress"]);
-
-    const rows = (data as Array<{ slot_number: number | null }> | null) || [];
-    const occupied = new Set<number>(
-      rows
-        .map((row) => row.slot_number)
-        .filter((slot): slot is number => typeof slot === "number")
-    );
+    // A regular customer's RLS policy only lets them see their own bookings, so
+    // querying the bookings table directly here would under-report how many
+    // bays are actually taken. This RPC returns just the occupied slot
+    // numbers, computed server-side across every customer's bookings.
+    const { data, error } = await supabase.rpc("get_occupied_wash_slots");
+    if (error) console.error("Could not load wash bay availability:", error.message);
+    const occupied = new Set<number>((data as number[] | null) || []);
     const free = Array.from({ length: 10 }, (_, i) => i + 1).filter((slot) => !occupied.has(slot));
     setAvailableSlots(free);
     return free;
-  };
-
-  const getNextQueuePosition = async () => {
-    const { data } = await supabase
-      .from("bookings")
-      .select("queue_position")
-      .in("status", ["confirmed", "in_queue", "in_progress"])
-      .order("queue_position", { ascending: false })
-      .limit(1);
-
-    return (data?.[0]?.queue_position ?? 0) + 1;
   };
 
   const startBooking = async () => {
@@ -159,35 +144,14 @@ export const Chatbot = ({ freeWashes, onBooked }: { freeWashes: number; onBooked
       return;
     }
 
-    const currentPackages = PACKAGES.map((p) => p.id);
-    const chosenPackage = currentPackages.includes(draft.package) ? draft.package : "premium" as PackageId;
-    const price = getPackage(chosenPackage).price;
-    const queue_position = await getNextQueuePosition();
-
-    const { error } = await supabase.from("bookings").insert({
-      user_id: user.id,
+    onBookingReady({
       car_make: draft.car_make,
       car_model: draft.car_model,
-      car_plate: draft.car_plate.toUpperCase(),
-      package: chosenPackage,
+      car_plate: draft.car_plate,
       slot_number: draft.slot,
-      scheduled_at: new Date().toISOString(),
-      notes: null,
-      amount: price,
-      payment_status: "paid",
-      status: "in_queue",
-      queue_position,
+      package: draft.package,
     });
-
-    if (error) {
-      addMessage({ from: "bot", text: `Sorry, something went wrong while booking: ${error.message}` });
-      setStage("idle");
-      setDraft({});
-      return;
-    }
-
-    addMessage({ from: "bot", text: `Payment successful! Your car is now booked for slot ${draft.slot}. You can bring your car in for a wash. Booking successfully created.` });
-    onBooked();
+    addMessage({ from: "bot", text: "Your details are ready in the booking form. Confirm them there; payment is handled securely after the booking is created." });
     setDraft({});
     setStage("idle");
   };
@@ -196,7 +160,10 @@ export const Chatbot = ({ freeWashes, onBooked }: { freeWashes: number; onBooked
     return text.includes("payment") || text.includes("payments") || text.includes("paying") || text.includes("making payments");
   };
 
-  const handleUserMessage = async (text: string) => {
+  const handleUserMessage = async (rawText: string) => {
+    // Defence in depth: cap message length here too, regardless of which
+    // input (typed or voice) the text came from.
+    const text = rawText.slice(0, 200);
     const normalized = text.trim().toLowerCase();
     addMessage({ from: "user", text });
 
@@ -263,23 +230,26 @@ export const Chatbot = ({ freeWashes, onBooked }: { freeWashes: number; onBooked
     }
 
     if (stage === "awaiting_package") {
-      const chosen = (text.trim().toLowerCase() as PackageId);
-      const match = PACKAGES.find((pkg) => pkg.id === chosen || pkg.name.toLowerCase().includes(chosen));
-      const selectedPackage = match ? match.id : ("premium" as PackageId);
-      const price = getPackage(selectedPackage).price;
-      setDraft((prev) => ({ ...prev, package: selectedPackage }));
-      addMessage({ from: "bot", text: `Excellent, a ${getPackage(selectedPackage).name} will cost R ${price}. Type 'yes' to pay now and confirm your booking.` });
+      const chosen = normalized;
+      const match = PACKAGES.find((pkg) => chosen.includes(pkg.id) || chosen.includes(pkg.name.split(" ")[0].toLowerCase()));
+      if (!match) {
+        addMessage({ from: "bot", text: "Sorry, I didn't catch that. Please reply Basic, Premium, or Deluxe." });
+        return;
+      }
+      const price = getPackage(match.id).price;
+      setDraft((prev) => ({ ...prev, package: match.id }));
+      addMessage({ from: "bot", text: `A ${match.name} costs R ${price}. Type 'yes' to review these details in the booking form.` });
       setStage("awaiting_payment");
       return;
     }
 
     if (stage === "awaiting_payment") {
       if (normalized.includes("yes") || normalized.includes("pay") || normalized.includes("confirm")) {
-        addMessage({ from: "bot", text: "Processing your payment now..." });
+        addMessage({ from: "bot", text: "Opening your booking form now..." });
         await handleBookingCreation();
         return;
       }
-      addMessage({ from: "bot", text: "Please reply 'yes' to complete the payment and finalize your booking." });
+      addMessage({ from: "bot", text: "Please reply 'yes' to open the booking form and review your details." });
       return;
     }
 
@@ -289,7 +259,7 @@ export const Chatbot = ({ freeWashes, onBooked }: { freeWashes: number; onBooked
         return;
       }
       await getAvailableSlots();
-      addMessage({ from: "bot", text: "Okay, to take payment I need your car details first. What is your car make?" });
+      addMessage({ from: "bot", text: "I can help prepare your booking details. What is your car make?" });
       setStage("awaiting_car_make");
       return;
     }
@@ -323,12 +293,12 @@ export const Chatbot = ({ freeWashes, onBooked }: { freeWashes: number; onBooked
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+    <div className="fixed bottom-3 right-3 z-50 flex flex-col items-end gap-3 sm:bottom-6 sm:right-6">
       {chatOpen && (
-        <div className="w-[340px] rounded-3xl border border-border bg-card/95 p-4 shadow-2xl backdrop-blur-xl">
+        <div className="max-h-[calc(100dvh-6rem)] w-[min(340px,calc(100vw-1.5rem))] overflow-y-auto rounded-3xl border border-border bg-card/95 p-4 shadow-2xl backdrop-blur-xl">
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <div className="text-sm font-semibold">AquaLux Assistant</div>
+              <div className="text-sm font-semibold">AquaLux assistant</div>
               <div className="text-xs text-muted-foreground">Ask me to book your next wash.</div>
             </div>
             <Button variant="ghost" size="icon" onClick={() => setChatOpen(false)}>
@@ -352,7 +322,7 @@ export const Chatbot = ({ freeWashes, onBooked }: { freeWashes: number; onBooked
               {listening ? (
                 <><MicOff className="mr-2 h-4 w-4" /> Stop</>
               ) : (
-                <><Mic className="mr-2 h-4 w-4" /> Voice book</>
+                <><Mic className="mr-2 h-4 w-4" /> Voice booking</>
               )}
             </Button>
             <Button size="sm" variant="outline" onClick={() => addMessage({ from: "bot", text: "You can say 'book a wash' or tap the voice button to start booking with your voice." })}>
@@ -364,6 +334,7 @@ export const Chatbot = ({ freeWashes, onBooked }: { freeWashes: number; onBooked
               value={input}
               onChange={(event) => setInput(event.target.value)}
               placeholder="Type a message..."
+              maxLength={200}
               className="flex-1"
             />
             <Button type="submit" size="sm" className="px-3">

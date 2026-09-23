@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Droplets, Loader2, UserRound } from "lucide-react";
 import { toast } from "sonner";
@@ -6,7 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
+<<<<<<< HEAD
 import { getFunctionErrorMessage } from "@/lib/function-error";
+=======
+import { useAuth } from "@/hooks/useAuth";
+import { showFieldError } from "@/lib/fieldError";
+import { edgeFunctionError } from "@/lib/edgeFunctionError";
+>>>>>>> 670074ddfd57f662a094f28b794239149a0fc44b
 
 const StaffRegistration = () => {
   const navigate = useNavigate();
@@ -15,24 +21,31 @@ const StaffRegistration = () => {
   const [code, setCode] = useState(params.get("code") ?? "");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    void supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? ""));
-  }, []);
+  // The invitation link signs the visitor in via a token in the URL, which
+  // Supabase processes asynchronously. Reading the session from the shared
+  // auth context (instead of a one-shot getUser() call here) means this page
+  // picks it up correctly however long that takes, instead of the button
+  // staying stuck on "not signed in" if it checked a beat too early.
+  const { user, loading: authLoading } = useAuth();
+  const email = user?.email ?? "";
 
   const register = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!invitationId) return toast.error("This invitation link is incomplete.");
-    if (!/^\d{6}$/.test(code)) return toast.error("Enter the six-digit invitation code.");
-    if (password.length < 6) return toast.error("Password must contain at least six characters.");
-    if (password !== confirmPassword) return toast.error("Passwords do not match.");
+    if (!/^\d{6}$/.test(code)) return showFieldError("Enter the six-digit invitation code.", "invite-code");
+    if (password.length < 6) return showFieldError("Password must contain at least six characters.", "staff-password");
+    if (password.length > 72) return showFieldError("Password must be 72 characters or fewer.", "staff-password");
+    if (password !== confirmPassword) return showFieldError("Passwords do not match.", "staff-password-confirm");
 
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("staff-signup", { body: { invitationId, code, password } });
+<<<<<<< HEAD
       if (error) throw new Error(await getFunctionErrorMessage(error, "Registration failed."));
+=======
+      if (error) throw await edgeFunctionError(error);
+>>>>>>> 670074ddfd57f662a094f28b794239149a0fc44b
       if (!data?.ok) throw new Error(data?.error || "Registration failed.");
 
       await supabase.auth.signOut();
@@ -41,17 +54,17 @@ const StaffRegistration = () => {
       toast.success(data.assignedSlot ? `Staff account activated. Your station is Wash Bay #${data.assignedSlot}.` : "Staff account activated.");
       navigate("/employee", { replace: true });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Registration failed.");
+      showFieldError(error instanceof Error ? error.message : "Registration failed.", "invite-code");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="relative grid min-h-screen place-items-center overflow-hidden bg-gradient-hero p-4">
+    <div className="relative grid min-h-screen place-items-center bg-gradient-hero p-4">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,hsl(var(--primary)/0.2),transparent_60%)]" />
       <div className="relative w-full max-w-md">
-        <Link to="/" className="mb-8 flex items-center justify-center gap-2 font-display text-2xl font-bold">
+        <Link to="/" aria-label="AquaLux home" className="mb-8 flex items-center justify-center gap-2 font-display text-2xl font-bold">
           <span className="grid h-10 w-10 place-items-center rounded-lg bg-gradient-primary shadow-glow"><Droplets className="h-5 w-5 text-primary-foreground" /></span>
           <span className="bg-gradient-primary bg-clip-text text-transparent">AquaLux</span>
         </Link>
@@ -63,13 +76,13 @@ const StaffRegistration = () => {
           {email && <p className="mt-5 rounded-xl border border-border bg-muted/30 p-3 text-sm">Invitation for <strong>{email}</strong></p>}
           <form onSubmit={register} className="mt-6 space-y-4">
             <div><Label htmlFor="invite-code">Invitation code</Label><Input id="invite-code" inputMode="numeric" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} required /></div>
-            <div><Label htmlFor="staff-password">Create password</Label><Input id="staff-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></div>
-            <div><Label htmlFor="staff-password-confirm">Confirm password</Label><Input id="staff-password-confirm" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required /></div>
-            <Button type="submit" variant="hero" size="lg" className="w-full" disabled={loading || !email}>
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />} Activate staff account
+            <div><Label htmlFor="staff-password">Create password</Label><Input id="staff-password" type="password" maxLength={72} value={password} onChange={(event) => setPassword(event.target.value)} required /></div>
+            <div><Label htmlFor="staff-password-confirm">Confirm password</Label><Input id="staff-password-confirm" type="password" maxLength={72} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required /></div>
+            <Button type="submit" variant="hero" size="lg" className="w-full" disabled={loading || authLoading || !email}>
+              {(loading || authLoading) && <Loader2 className="h-4 w-4 animate-spin" />} {authLoading ? "Checking your invitation..." : "Activate staff account"}
             </Button>
           </form>
-          {!email && <p className="mt-4 text-center text-sm text-warning">Open this page using the link in your invitation email.</p>}
+          {!authLoading && !email && <p className="mt-4 text-center text-sm text-warning">Open this page using the link in your invitation email.</p>}
         </div>
       </div>
     </div>

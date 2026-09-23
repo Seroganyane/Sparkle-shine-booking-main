@@ -265,10 +265,26 @@ const Employee = () => {
 
     setScanning(true);
     try {
-      const { recognize } = await import("tesseract.js");
-      const result = await recognize(photo, "eng");
-      const scannedLines = result.data.text.split(/\r?\n/).map(stripPlate).filter(Boolean);
-      const matched = plateTextMatches(result.data.text, booking?.car_plate ?? "");
+      const { createWorker, PSM } = await import("tesseract.js");
+      const worker = await createWorker("eng");
+      let scannedText: string;
+      try {
+        // Tesseract's default page-segmentation mode assumes a document
+        // layout and, on a real vehicle photo — a small plate surrounded by
+        // a lot of dark bumper — it frequently finds no text at all and
+        // returns an empty result, even when the plate itself is perfectly
+        // legible. SPARSE_TEXT is built for exactly this: find text
+        // anywhere in the image without assuming any layout around it.
+        // Confirmed against a real failing photo: AUTO returned "" while
+        // SPARSE_TEXT correctly read the plate.
+        await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
+        const result = await worker.recognize(photo);
+        scannedText = result.data.text;
+      } finally {
+        await worker.terminate();
+      }
+      const scannedLines = scannedText.split(/\r?\n/).map(stripPlate).filter(Boolean);
+      const matched = plateTextMatches(scannedText, booking?.car_plate ?? "");
 
       if (!matched) {
         setMismatchDetected(true);

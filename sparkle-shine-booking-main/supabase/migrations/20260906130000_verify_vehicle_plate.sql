@@ -1,22 +1,32 @@
+<<<<<<< HEAD
 -- Verify an arriving vehicle against its booking and alert all administrators.
+=======
+-- This migration is already applied remotely; retained locally to keep migration history aligned.
+>>>>>>> 670074ddfd57f662a094f28b794239149a0fc44b
 ALTER TABLE public.employee_assignments
   ADD COLUMN plate_verified_at TIMESTAMPTZ,
   ADD COLUMN scanned_plate TEXT;
 
 CREATE OR REPLACE FUNCTION public.verify_employee_vehicle(_assignment_id UUID, _scanned_plate TEXT)
 RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+<<<<<<< HEAD
 DECLARE
   assignment_row public.employee_assignments;
   booking_row public.bookings;
   staff_name TEXT;
   normalized_scanned TEXT;
   normalized_booked TEXT;
+=======
+DECLARE assignment_row public.employee_assignments; booking_row public.bookings; staff_name TEXT;
+  normalized_scanned TEXT; normalized_booked TEXT;
+>>>>>>> 670074ddfd57f662a094f28b794239149a0fc44b
 BEGIN
   SELECT * INTO assignment_row FROM public.employee_assignments
   WHERE id = _assignment_id AND employee_id = auth.uid() AND status = 'active' FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Active assignment not found'; END IF;
   IF assignment_row.accepted_at IS NULL THEN RAISE EXCEPTION 'Accept the booking before verifying the vehicle'; END IF;
   IF assignment_row.plate_verified_at IS NOT NULL THEN RAISE EXCEPTION 'This vehicle has already been verified'; END IF;
+<<<<<<< HEAD
 
   SELECT * INTO booking_row FROM public.bookings WHERE id = assignment_row.booking_id;
   normalized_scanned := upper(regexp_replace(COALESCE(_scanned_plate, ''), '[^a-zA-Z0-9]', '', 'g'));
@@ -36,12 +46,24 @@ BEGIN
     staff_name || ' verified number plate ' || booking_row.car_plate ||
     ' for Wash Bay #' || COALESCE(booking_row.slot_number::text, '') ||
     '. It is the correct customer vehicle.', 'vehicle_verified'
+=======
+  SELECT * INTO booking_row FROM public.bookings WHERE id = assignment_row.booking_id;
+  normalized_scanned := upper(regexp_replace(COALESCE(_scanned_plate, ''), '[^a-zA-Z0-9]', '', 'g'));
+  normalized_booked := upper(regexp_replace(booking_row.car_plate, '[^a-zA-Z0-9]', '', 'g'));
+  IF normalized_scanned = '' OR normalized_scanned <> normalized_booked THEN RAISE EXCEPTION 'Number plate does not match this booking'; END IF;
+  UPDATE public.employee_assignments SET plate_verified_at = now(), scanned_plate = normalized_scanned WHERE id = assignment_row.id;
+  SELECT COALESCE(full_name, email, 'Staff member') INTO staff_name FROM public.profiles WHERE id = auth.uid();
+  INSERT INTO public.notifications (user_id, title, message, type)
+  SELECT user_id, 'Customer vehicle verified', staff_name || ' verified number plate ' || booking_row.car_plate ||
+    ' for Wash Bay #' || COALESCE(booking_row.slot_number::text, '') || '. It is the correct customer vehicle.', 'vehicle_verified'
+>>>>>>> 670074ddfd57f662a094f28b794239149a0fc44b
   FROM public.user_roles WHERE role = 'admin';
 END;
 $$;
 
 REVOKE ALL ON FUNCTION public.verify_employee_vehicle(UUID, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.verify_employee_vehicle(UUID, TEXT) TO authenticated;
+<<<<<<< HEAD
 
 CREATE OR REPLACE FUNCTION public.complete_employee_assignment(_assignment_id UUID)
 RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
@@ -60,3 +82,5 @@ BEGIN
   FROM public.user_roles WHERE role = 'admin';
 END;
 $$;
+=======
+>>>>>>> 670074ddfd57f662a094f28b794239149a0fc44b

@@ -33,6 +33,20 @@ const idNumberError = (value: string) => {
   return null;
 };
 
+<<<<<<< HEAD
+=======
+// Supabase's built-in email sender (used until a custom SMTP provider is
+// configured) only allows a handful of emails per hour, by design — it's
+// meant for testing, not production. Turn that raw error into something an
+// admin can act on instead of just retrying blindly.
+const friendlyEmailError = (message: string | undefined) => {
+  if (message && /rate limit/i.test(message)) {
+    return 'Supabase has temporarily limited outgoing emails for this project — its built-in email sender allows only a few per hour. Wait a few minutes and try again, or set up a real email provider under Supabase Dashboard → Authentication → Emails → SMTP Settings so invitations aren’t rate-limited.';
+  }
+  return message || 'Could not send the invitation email.';
+};
+
+>>>>>>> 670074ddfd57f662a094f28b794239149a0fc44b
 const sha256 = async (value: string) => {
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -78,9 +92,13 @@ Deno.serve(async (req) => {
       const isPendingStaffInvite = !existingUser.email_confirmed_at && Boolean(existingUser.user_metadata?.staff_invitation_id);
       if (!isPendingStaffInvite) {
         await adminClient.from('staff_invitations').delete().eq('id', invitation.id);
+<<<<<<< HEAD
         return json({
           error: 'This email already has an account. Add that account as an employee from the Employees list instead of sending an invitation.',
         }, 409);
+=======
+        return json({ error: friendlyEmailError(recoveryError.message) }, 400);
+>>>>>>> 670074ddfd57f662a094f28b794239149a0fc44b
       }
 
       // Supabase cannot invite an address that already has an Auth user. A previous,
@@ -88,7 +106,11 @@ Deno.serve(async (req) => {
       const { error: deleteError } = await adminClient.auth.admin.deleteUser(existingUser.id);
       if (deleteError) {
         await adminClient.from('staff_invitations').delete().eq('id', invitation.id);
+<<<<<<< HEAD
         return json({ error: `Could not replace the previous invitation: ${deleteError.message}` }, 400);
+=======
+        return json({ error: friendlyEmailError(inviteError?.message) }, 400);
+>>>>>>> 670074ddfd57f662a094f28b794239149a0fc44b
       }
     }
 

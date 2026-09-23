@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Navbar } from "@/components/app/Navbar";
 import { PACKAGES } from "@/lib/packages";
-import heroImg from "@/assets/hero-carwash.jpg";
+import heroImg from "@/assets/hero-carwash.webp";
 import { Calendar, Bell, CreditCard, Gift, Sparkles, Check, ArrowRight } from "lucide-react";
 
 const features = [
@@ -21,16 +21,16 @@ const Index = () => {
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-hero opacity-90" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,hsl(var(--primary)/0.25),transparent_60%)]" />
-        <div className="container relative grid gap-12 py-20 lg:grid-cols-2 lg:py-32">
+        <div className="container relative grid min-w-0 gap-8 py-10 sm:py-16 lg:grid-cols-2 lg:gap-12 lg:py-24">
           <div className="flex flex-col justify-center animate-fade-up">
             <span className="mb-6 inline-flex w-fit items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-medium text-primary">
-              <Sparkles className="h-3 w-3" /> Smart booking · Real-time queue
+              <Sparkles className="h-3 w-3" /> Easy booking · Live wash queue
             </span>
-            <h1 className="font-display text-5xl font-bold leading-tight tracking-tight md:text-6xl lg:text-7xl">
+            <h1 className="font-display text-4xl font-bold leading-tight tracking-tight sm:text-5xl lg:text-6xl">
               Your car deserves a <span className="bg-gradient-primary bg-clip-text text-transparent">flawless</span> shine.
             </h1>
             <p className="mt-6 max-w-xl text-lg text-muted-foreground">
-              Book your slot, get pinged at exactly the right time, pay online, and rack up free washes. Zero waiting. Zero stress.
+              AquaLux car wash helps you book a wash, pay online, and track rewards. We will let you know when to bring your car in.
             </p>
             <div className="mt-8 flex flex-wrap gap-4">
               <Button variant="hero" size="xl" asChild>
@@ -42,22 +42,20 @@ const Index = () => {
                 <a href="#packages">View packages</a>
               </Button>
             </div>
-            <div className="mt-10 flex items-center gap-6 text-sm text-muted-foreground">
-              <div><span className="text-2xl font-bold text-foreground">10k+</span><div>Cars washed</div></div>
-              <div className="h-10 w-px bg-border" />
-              <div><span className="text-2xl font-bold text-foreground">4.9★</span><div>Avg rating</div></div>
-              <div className="h-10 w-px bg-border" />
-              <div><span className="text-2xl font-bold text-foreground">15min</span><div>Avg wait</div></div>
+            <div className="mt-8 flex flex-wrap gap-4 text-sm text-muted-foreground">
+              <span>Book online</span><span>Pay securely</span><span>Track rewards</span>
             </div>
           </div>
-          <div className="relative animate-fade-up">
+          <div className="relative min-w-0 animate-fade-up">
             <div className="absolute -inset-4 rounded-3xl bg-gradient-primary opacity-20 blur-3xl" />
             <img
               src={heroImg}
               alt="Premium car covered in foam at a high-tech car wash"
               width={1536}
               height={1024}
-              className="relative w-full rounded-3xl border border-border shadow-card"
+              fetchPriority="high"
+              decoding="async"
+              className="relative block h-auto w-full rounded-3xl border border-border object-cover shadow-card"
             />
           </div>
         </div>
@@ -83,7 +81,7 @@ const Index = () => {
 
       {/* Packages */}
       <section id="packages" className="container py-20">
-        <div className="mx-auto mb-12 max-w-2xl rounded-3xl border border-border bg-card/90 p-10 text-center shadow-card">
+        <div className="mx-auto mb-12 max-w-2xl rounded-3xl border border-border bg-card/90 p-10 text-left shadow-card">
           <h2 className="font-display text-4xl font-bold md:text-5xl text-foreground">Pick your package</h2>
           <p className="mt-3 text-foreground">Three tiers. All powered by the same obsession with detail.</p>
         </div>
@@ -97,7 +95,7 @@ const Index = () => {
             >
               {i === 1 && (
                 <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
-                  Most Popular
+                  Most popular
                 </span>
               )}
               <h3 className="font-display text-2xl font-bold">{p.name}</h3>
@@ -122,6 +120,7 @@ const Index = () => {
       </section>
 
       <footer className="border-t border-border/50 py-8 text-center text-sm text-muted-foreground">
+        <p className="mb-2">Need help booking? Sign in and use the booking assistant on your dashboard.</p>
         © {new Date().getFullYear()} AquaLux Carwash. Crafted with care by Ponas.
       </footer>
     </div>

@@ -3,7 +3,7 @@ export type PackageId = "basic" | "premium" | "deluxe";
 export const PACKAGES: { id: PackageId; name: string; price: number; cost: number; duration: string; features: string[] }[] = [
   {
     id: "basic",
-    name: "Basic Shine",
+    name: "Basic shine",
     price: 15,
     cost: 5,
     duration: "20 min",
@@ -11,7 +11,7 @@ export const PACKAGES: { id: PackageId; name: string; price: number; cost: numbe
   },
   {
     id: "premium",
-    name: "Premium Detail",
+    name: "Premium detail",
     price: 30,
     cost: 12,
     duration: "40 min",
@@ -19,7 +19,7 @@ export const PACKAGES: { id: PackageId; name: string; price: number; cost: numbe
   },
   {
     id: "deluxe",
-    name: "Deluxe Showroom",
+    name: "Deluxe showroom",
     price: 55,
     cost: 22,
     duration: "75 min",

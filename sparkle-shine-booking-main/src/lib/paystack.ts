@@ -1,5 +1,9 @@
 import { toast } from "sonner";
+<<<<<<< HEAD
 import { getFunctionErrorMessage } from "@/lib/function-error";
+=======
+import { edgeFunctionError } from "@/lib/edgeFunctionError";
+>>>>>>> 670074ddfd57f662a094f28b794239149a0fc44b
 
 declare global {
   interface Window {
@@ -45,7 +49,11 @@ export const verifyPaystackPayment = async ({
   const { data, error } = await supabase.functions.invoke("verify-paystack-payment", {
     body: { reference, paymentType, bookingId, amount, items },
   });
+<<<<<<< HEAD
   if (error) throw new Error(await getFunctionErrorMessage(error, "Payment verification failed."));
+=======
+  if (error) throw await edgeFunctionError(error);
+>>>>>>> 670074ddfd57f662a094f28b794239149a0fc44b
   if (data?.error) throw new Error(data.error);
   return data;
 };
