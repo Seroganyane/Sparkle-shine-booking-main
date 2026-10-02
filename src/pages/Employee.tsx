@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getPackage } from "@/lib/packages";
 import { plateTextMatches, stripPlate } from "@/lib/plateMatch";
+import { preparePlateCrops } from "@/lib/plateVision";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -66,6 +67,8 @@ const Employee = () => {
   const [accepting, setAccepting] = useState(false);
   const [vehiclePhoto, setVehiclePhoto] = useState<string | null>(null);
   const [vehicleVerified, setVehicleVerified] = useState(false);
+  const [plateCropPreview, setPlateCropPreview] = useState<string | null>(null);
+  const [detectedPlate, setDetectedPlate] = useState<string>("");
   const [scanning, setScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
   const [mismatchDetected, setMismatchDetected] = useState(false);
@@ -240,6 +243,8 @@ const Employee = () => {
       return null;
     });
     setVehicleVerified(false);
+    setPlateCropPreview((current) => { if (current) URL.revokeObjectURL(current); return null; });
+    setDetectedPlate("");
     setScanMessage(null);
     setMismatchDetected(false);
     setMismatchPlateGuess("");
@@ -266,31 +271,54 @@ const Employee = () => {
     setScanning(true);
     try {
       const { createWorker, PSM } = await import("tesseract.js");
+      const crops = await preparePlateCrops(photo);
+      setPlateCropPreview((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return crops[0]?.previewUrl ?? null;
+      });
+
       const worker = await createWorker("eng");
-      let scannedText: string;
+      let bestText = "";
+      let bestConfidence = -1;
       try {
-        // Tesseract's default page-segmentation mode assumes a document
-        // layout and, on a real vehicle photo — a small plate surrounded by
-        // a lot of dark bumper — it frequently finds no text at all and
-        // returns an empty result, even when the plate itself is perfectly
-        // legible. SPARSE_TEXT is built for exactly this: find text
-        // anywhere in the image without assuming any layout around it.
-        // Confirmed against a real failing photo: AUTO returned "" while
-        // SPARSE_TEXT correctly read the plate.
-        await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
-        const result = await worker.recognize(photo);
-        scannedText = result.data.text;
+        // SINGLE_BLOCK works well after we isolate the plate-sized region.
+        // Restricting the alphabet prevents punctuation/background marks from
+        // being interpreted as registration characters.
+        await worker.setParameters({
+          tessedit_pageseg_mode: PSM.SINGLE_BLOCK,
+          tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -",
+          preserve_interword_spaces: "1",
+        });
+        for (const crop of crops) {
+          const result = await worker.recognize(crop.blob);
+          if (result.data.confidence > bestConfidence) {
+            bestConfidence = result.data.confidence;
+            bestText = result.data.text;
+          }
+        }
+        // Fallback to the full photo when the guided crops contain no useful text.
+        if (!stripPlate(bestText)) {
+          await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
+          const fallback = await worker.recognize(photo);
+          bestText = fallback.data.text;
+          bestConfidence = fallback.data.confidence;
+        }
       } finally {
         await worker.terminate();
+        crops.slice(1).forEach((crop) => URL.revokeObjectURL(crop.previewUrl));
       }
-      const scannedLines = scannedText.split(/\r?\n/).map(stripPlate).filter(Boolean);
-      const matched = plateTextMatches(scannedText, booking?.car_plate ?? "");
+
+      const scannedLines = bestText.split(/\r?\n/).map(stripPlate).filter(Boolean);
+      const guess = scannedLines.sort((a, b) => b.length - a.length)[0] ?? "";
+      setDetectedPlate(guess);
+      const matched = bestConfidence >= 35 && plateTextMatches(bestText, booking?.car_plate ?? "");
 
       if (!matched) {
         setMismatchDetected(true);
-        setMismatchPlateGuess(scannedLines[0] ?? "");
-        setScanMessage(`The scanned plate does not match ${booking?.car_plate}. Do not start the wash.`);
-        toast.error("Wrong vehicle or plate not clearly visible", { description: `Expected registration: ${booking?.car_plate}` });
+        setMismatchPlateGuess(guess);
+        const reason = bestConfidence < 35 ? "The plate image was not clear enough to verify." : `Detected ${guess || "an unreadable plate"}, which does not match ${booking?.car_plate}.`;
+        setScanMessage(`${reason} Retake the photo before starting the wash.`);
+        toast.error("Vehicle not verified", { description: `Expected registration: ${booking?.car_plate}` });
         return;
       }
 
@@ -300,12 +328,12 @@ const Employee = () => {
       });
       if (error) throw error;
       setVehicleVerified(true);
-      setScanMessage(`Correct vehicle verified: ${booking?.car_plate}. The admin has been notified.`);
+      setScanMessage(`Correct vehicle verified: ${booking?.car_plate}. OCR confidence ${Math.round(bestConfidence)}%. The admin has been notified.`);
       toast.success("Correct vehicle verified", { description: "The administrator has been notified automatically." });
       await load();
     } catch (error) {
       const message = error instanceof Error ? error.message : "The number plate could not be scanned.";
-      setScanMessage("The plate could not be read. Retake a clear, close photo of the registration plate.");
+      setScanMessage("The plate could not be read. Retake a clear, close photo with the plate inside the guide.");
       toast.error("Plate scan failed", { description: message });
     } finally {
       setScanning(false);
@@ -553,7 +581,7 @@ const Employee = () => {
                 <ShieldCheck className="mt-0.5 h-6 w-6 shrink-0 text-primary" />
                 <div>
                   <h3 className="font-display text-lg font-semibold">Verify the vehicle before washing</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">Take a close, clear photo of the registration plate. It will be scanned and checked automatically against <span className="font-semibold text-foreground">{booking.car_plate}</span>.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Take a close, clear photo and keep the registration plate near the centre of the picture. The app isolates the plate region, improves contrast, reads it, and checks it automatically against <span className="font-semibold text-foreground">{booking.car_plate}</span>.</p>
                 </div>
               </div>
 
@@ -568,7 +596,26 @@ const Employee = () => {
               />
 
               {vehiclePhoto && (
-                <img src={vehiclePhoto} alt="Vehicle verification preview" className="mt-4 max-h-72 w-full rounded-xl border border-border object-cover" />
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">Captured vehicle photo</p>
+                    <div className="relative overflow-hidden rounded-xl border border-border">
+                      <img src={vehiclePhoto} alt="Vehicle verification preview" className="max-h-72 w-full object-cover" />
+                      <div className="pointer-events-none absolute left-[12%] top-[30%] h-[40%] w-[76%] rounded-lg border-2 border-dashed border-primary/80" />
+                    </div>
+                  </div>
+                  {plateCropPreview && (
+                    <div>
+                      <p className="mb-1 text-xs font-medium text-muted-foreground">Plate region sent to OCR</p>
+                      <img src={plateCropPreview} alt="Processed number plate region" className="max-h-72 w-full rounded-xl border border-border object-contain" />
+                    </div>
+                  )}
+                </div>
+              )}
+              {detectedPlate && (
+                <div className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
+                  <span className="text-muted-foreground">OCR detected: </span><span className="font-mono font-semibold tracking-wider">{detectedPlate}</span>
+                </div>
               )}
 
               <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
