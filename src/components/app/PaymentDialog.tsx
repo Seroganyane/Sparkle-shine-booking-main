@@ -58,12 +58,14 @@ export const PaymentDialog = ({
       return;
     }
 
+    let invoiceSent = false;
     try {
-      await verifyPaystackPayment({
+      const result = await verifyPaystackPayment({
         reference: paystack.reference!,
         paymentType: "booking",
         bookingId,
       });
+      invoiceSent = Boolean(result?.invoiceSent);
     } catch (error) {
       setLoading(false);
       toast.error(error instanceof Error ? error.message : "We could not verify your payment.");
@@ -72,7 +74,9 @@ export const PaymentDialog = ({
 
     setLoading(false);
     toast.success("You have successfully paid!", {
-      description: "Your payment has been received and your booking is confirmed.",
+      description: invoiceSent
+        ? `Your booking is confirmed. Your invoice has been emailed to ${email}.`
+        : "Your payment has been received and your booking is confirmed.",
     });
     onPaid();
     onOpenChange(false);

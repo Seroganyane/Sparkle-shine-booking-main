@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { buildBookingInvoice, sendInvoiceEmail } from "../_shared/invoice.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -71,7 +72,7 @@ Deno.serve(async (request) => {
       if (!body.bookingId) throw new Error("Booking ID is required.");
       const { data: booking, error: bookingError } = await adminClient
         .from("bookings")
-        .select("id, user_id, amount, queue_position, payment_status")
+        .select("id, user_id, amount, queue_position, payment_status, car_make, car_model, car_plate, package, scheduled_at")
         .eq("id", body.bookingId)
         .maybeSingle();
       if (bookingError || !booking) throw new Error("Booking not found.");
@@ -110,7 +111,26 @@ Deno.serve(async (request) => {
         currency: transaction.currency,
       });
       if (paymentError) throw paymentError;
-      return Response.json({ success: true, bookingId: booking.id }, { headers: corsHeaders });
+
+      // Payment is verified and the booking is now marked paid — email the
+      // customer their invoice. Best-effort: the payment already succeeded,
+      // so an email problem must not fail the checkout. Runs only on the
+      // first verification (repeat calls return early above), so the
+      // customer gets exactly one invoice per payment.
+      let invoiceSent = false;
+      try {
+        const { data: profile } = await adminClient
+          .from("profiles")
+          .select("full_name, surname, phone, email")
+          .eq("id", user.id)
+          .maybeSingle();
+        await sendInvoiceEmail(buildBookingInvoice(booking, profile, user.email ?? transaction.customer.email, transaction));
+        invoiceSent = true;
+      } catch (invoiceError) {
+        console.error("Could not send booking invoice:", invoiceError instanceof Error ? invoiceError.message : invoiceError);
+      }
+
+      return Response.json({ success: true, bookingId: booking.id, invoiceSent }, { headers: corsHeaders });
     }
 
     const orderAmount = body.amount;
